@@ -91,7 +91,8 @@ function reconcileLoans(data: FinanceData, today: DateKey = todayKey()): Finance
       desired.set(`${loan.id}|p:${prepayment.id}`, {
         amount: prepayment.amount,
         date: prepayment.date,
-        note: `${loan.title} — досрочное погашение`,
+        // Свой комментарий человека важнее нашей формулировки — он его и искал в истории.
+        note: prepayment.note ?? `${loan.title} — досрочное погашение`,
         loanId: loan.id,
         loanRef: `p:${prepayment.id}`,
       })

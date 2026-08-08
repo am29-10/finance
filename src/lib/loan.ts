@@ -163,11 +163,24 @@ export function loanStats(loan: Loan, today: DateKey = todayKey()): LoanStats {
   const past = schedule.filter((row) => row.date <= today)
   const next = schedule.find((row) => row.date > today)
 
-  const paidPrincipal = sum(past, (row) => row.principal + row.prepayment)
+  /**
+   * Досрочные, которые уже внесены, но попадают в ещё не наступивший период графика.
+   *
+   * В строках графика их пока нет: досрочка применяется в конце периода
+   * ближайшего платежа. Без этой поправки человек вносит 200 тысяч и видит
+   * прежний остаток долга — деньги ушли, а приложение говорит, что ничего не
+   * изменилось, и верить ему после такого перестают.
+   */
+  const lastPast = past[past.length - 1]
+  const pendingPrepaid = loan.prepayments
+    .filter((p) => p.date <= today && (!lastPast || p.date > lastPast.date))
+    .reduce((acc, p) => acc + p.amount, 0)
+
+  const paidPrincipal = sum(past, (row) => row.principal + row.prepayment) + pendingPrepaid
   const paidInterest = sum(past, (row) => row.interest)
   const totalInterest = sum(schedule, (row) => row.interest)
 
-  const balance = past.length > 0 ? past[past.length - 1].balance : loan.principal
+  const balance = Math.max((lastPast ? lastPast.balance : loan.principal) - pendingPrepaid, 0)
   const last = schedule[schedule.length - 1]
 
   return {

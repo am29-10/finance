@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { Field } from './Field'
 import { CategoryIcon } from './CategoryIcon'
-import { actions, categoriesOf, useFinance } from '../data/store'
+import { actions, activeLoans, categoriesOf, useFinance } from '../data/store'
+import { LOAN_CATEGORY_ID } from '../data/categories'
 import type { Operation, OperationType } from '../data/types'
 import { formatAmountInput, formatMoney, parseAmount } from '../lib/money'
 import { formatFullDate, todayKey } from '../lib/date'
+import { forecastPrepayment, formatTerm, loanStats } from '../lib/loan'
 
 interface OperationSheetProps {
   open: boolean
@@ -27,8 +29,34 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
   const [note, setNote] = useState(operation?.note ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
+  const loans = activeLoans(data)
+
+  /**
+   * Кредит, в счёт которого идёт эта сумма.
+   *
+   * Без него выбор категории «Кредиты и ипотека» вводил в заблуждение: расход
+   * появлялся, а долг оставался прежним, потому что приложение не знало, какому
+   * кредиту его засчитать. Когда кредит один, подставляем его сразу — угадывать
+   * тут нечего, а выбор виден на экране и его можно снять.
+   */
+  const [loanId, setLoanId] = useState<string | null>(() => (loans.length === 1 ? loans[0].id : null))
+
   const categories = categoriesOf(data, type)
   const parsed = parseAmount(amount)
+
+  const isLoanCategory = type === 'expense' && categoryId === LOAN_CATEGORY_ID
+  // Привязка к кредиту меняет график, поэтому доступна только для новых операций:
+  // превращать уже проведённый расход в досрочное погашение задним числом — верный
+  // способ получить расхождение с банком, которое потом никто не распутает.
+  const showLoanPicker = isLoanCategory && !isEditing && loans.length > 0
+
+  const selectedLoan = showLoanPicker ? loans.find((l) => l.id === loanId) : undefined
+  const balance = selectedLoan ? loanStats(selectedLoan).balance : 0
+  // Внести больше остатка нельзя: излишек банк вернёт, а график от него поедет.
+  const applied = selectedLoan && parsed !== null ? Math.min(parsed, balance) : parsed
+  const forecast =
+    selectedLoan && applied !== null ? forecastPrepayment(selectedLoan, applied, date) : null
+
   const canSave = parsed !== null && categories.some((c) => c.id === categoryId)
 
   function changeType(next: OperationType) {
@@ -40,6 +68,24 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
 
   function handleSave() {
     if (parsed === null) return
+
+    /**
+     * Платёж по кредиту записывается не расходом, а досрочным погашением:
+     * расход в категории «Кредиты и ипотека» приложение создаст из него само,
+     * и он останется связан с графиком. Заведи мы здесь обычную операцию —
+     * деньги ушли бы в никуда, а долг не сдвинулся.
+     */
+    if (selectedLoan && applied !== null) {
+      actions.addPrepayment(selectedLoan.id, {
+        date,
+        amount: applied,
+        mode: selectedLoan.earlyMode,
+        note: note.trim() || undefined,
+      })
+      onClose()
+      return
+    }
+
     const payload = { type, amount: parsed, categoryId, date, note: note.trim() || undefined }
 
     if (operation) actions.updateOperation(operation.id, payload)
@@ -149,6 +195,50 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
           </div>
         </Field>
 
+        {showLoanPicker && (
+          <Field
+            label="В счёт какого кредита"
+            hint={
+              selectedLoan
+                ? undefined
+                : 'Без выбора сумма попадёт только в расходы, а остаток долга не изменится.'
+            }
+          >
+            <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
+              {loans.map((loan) => (
+                <LoanChoice
+                  key={loan.id}
+                  title={loan.title}
+                  meta={`Остаток ${formatMoney(loanStats(loan).balance)}`}
+                  active={loan.id === loanId}
+                  onClick={() => setLoanId(loan.id)}
+                />
+              ))}
+              <LoanChoice
+                title="Не привязывать"
+                meta="Кредит в другом банке, здесь не заведён"
+                active={loanId === null}
+                onClick={() => setLoanId(null)}
+              />
+            </div>
+          </Field>
+        )}
+
+        {isLoanCategory && !isEditing && loans.length === 0 && (
+          <p className="rounded-2xl bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-muted">
+            Кредитов в приложении пока нет, поэтому сумма попадёт просто в расходы. Заведите
+            кредит карточкой на главной — тогда платежи будут уменьшать долг, а приложение
+            посчитает остаток, переплату и выгоду от досрочных погашений.
+          </p>
+        )}
+
+        {isLoanCategory && isEditing && !operation?.loanId && (
+          <p className="rounded-2xl bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-muted">
+            Эта операция не привязана к кредиту и на остаток долга не влияет — она просто расход
+            в этой категории. Чтобы уменьшить долг, внесите платёж через раздел «Кредиты».
+          </p>
+        )}
+
         <Field label="Дата">
           <div className="relative">
             <input
@@ -173,12 +263,50 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
           />
         </Field>
 
+        {selectedLoan && forecast && applied !== null && (
+          <div className="rounded-2xl bg-brand/8 px-4 py-3.5">
+            <p className="text-[14px] leading-snug">
+              <b>{formatMoney(applied)}</b> уйдёт в счёт долга — останется{' '}
+              <b className="tabular-nums">{formatMoney(forecast[selectedLoan.earlyMode].balance)}</b>.
+            </p>
+            <p className="mt-1 text-[13px] leading-snug text-muted">
+              {selectedLoan.earlyMode === 'term' ? (
+                forecast.term.savedMonths > 0 ? (
+                  <>
+                    Срок сократится на {formatTerm(forecast.term.savedMonths)}, экономия на
+                    процентах — {formatMoney(forecast.term.savedInterest)}.
+                  </>
+                ) : (
+                  <>Суммы пока не хватает, чтобы убрать хотя бы один платёж.</>
+                )
+              ) : forecast.payment.savedMonthly > 0 ? (
+                <>
+                  Платёж снизится на {formatMoney(forecast.payment.savedMonthly)}, экономия на
+                  процентах — {formatMoney(forecast.payment.savedInterest)}.
+                </>
+              ) : (
+                <>Платёж почти не изменится.</>
+              )}
+            </p>
+            {!selectedLoan.autoExpense && (
+              <p className="mt-2 text-[12px] leading-snug" style={{ color: 'var(--color-danger)' }}>
+                У этого кредита выключен учёт платежей в расходах: долг уменьшится, но в расходах
+                сумма не появится. Включается при изменении кредита.
+              </p>
+            )}
+          </div>
+        )}
+
         <button
           onClick={handleSave}
           disabled={!canSave}
           className="mt-1 w-full rounded-2xl bg-brand py-4 text-[17px] font-semibold text-white transition-all duration-200 active:scale-[0.98] disabled:opacity-30"
         >
-          {parsed === null ? 'Сохранить' : `Сохранить ${formatMoney(parsed)}`}
+          {parsed === null
+            ? 'Сохранить'
+            : selectedLoan
+              ? `Внести ${formatMoney(applied ?? parsed)} в счёт кредита`
+              : `Сохранить ${formatMoney(parsed)}`}
         </button>
 
         {isEditing && (
@@ -195,6 +323,36 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
         )}
       </div>
     </Sheet>
+  )
+}
+
+function LoanChoice({
+  title,
+  meta,
+  active,
+  onClick,
+}: {
+  title: string
+  meta: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-bg"
+    >
+      <span
+        className="flex size-5 shrink-0 items-center justify-center rounded-full transition-all duration-200"
+        style={{
+          border: active ? '6px solid var(--color-brand)' : '2px solid #d6dbe1',
+        }}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-medium">{title}</span>
+        <span className="mt-0.5 block text-[12px] text-muted">{meta}</span>
+      </span>
+    </button>
   )
 }
 
