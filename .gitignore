@@ -1,0 +1,20 @@
+node_modules
+dist
+dist-app
+dist-ssr
+dev-dist
+
+# Проект Android генерируется на сборке из capacitor.config.ts — в репозитории не нужен.
+android
+ios
+
+# Ключ подписи APK и пароли к нему. Утечка = чужие сборки с вашей подписью,
+# потеря = невозможность обновить приложение у тех, кто его уже поставил.
+*.jks
+*.keystore
+keystore-secrets.txt
+*.local
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea

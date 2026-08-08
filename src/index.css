@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+
+/* Палитра из ТЗ (раздел 5). Tailwind 4 делает из токенов утилиты: bg-brand, text-muted и т.д. */
+@theme {
+  --color-brand: #2e7d6b;
+  --color-brand-dark: #245e50;
+  --color-bg: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-violet: #7c6cf2;
+  --color-orange: #ff8a4c;
+  --color-danger: #f44336;
+  --color-income: #4caf50;
+
+  --color-ink: #101418;
+  --color-muted: #8b939d;
+  --color-line: #eceff3;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', Inter, 'Segoe UI', Roboto,
+    system-ui, sans-serif;
+
+  --ease-ios: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+button {
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-out {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-sheet-in {
+  animation: sheet-in 0.34s var(--ease-ios) both;
+}
+
+.animate-sheet-out {
+  animation: sheet-out 0.24s var(--ease-ios) both;
+}
+
+.animate-overlay-in {
+  animation: overlay-in 0.24s ease both;
+}
+
+.animate-overlay-out {
+  animation: overlay-out 0.24s ease both;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-7px);
+  }
+  40%,
+  80% {
+    transform: translateX(7px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease;
+}
+
+.animate-fade-up {
+  animation: fade-up 0.34s var(--ease-ios) both;
+}

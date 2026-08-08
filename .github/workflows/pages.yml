@@ -1,0 +1,56 @@
+# Собирает сайт и выкладывает его на am29-10.github.io/finance/ при каждом изменении кода.
+#
+# Раньше собранные файлы заливались в репозиторий руками, и папка assets
+# регулярно терялась по дороге. Теперь в репозитории лежит только исходный код,
+# а собранная версия существует лишь как результат этой сборки — разойтись им
+# больше негде.
+
+name: Сайт
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['**.md']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Если пуши идут один за другим, публикуем последний, а не очередь из всех.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # enablement: true сам переключает Pages на публикацию из Actions,
+      # чтобы не искать этот переключатель в настройках репозитория.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - id: deploy
+        uses: actions/deploy-pages@v4

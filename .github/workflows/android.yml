@@ -1,0 +1,138 @@
+# Собирает APK в облаке GitHub и кладёт готовый файл в раздел Releases.
+#
+# Android SDK весит около десяти гигабайт, поэтому ставить его на свой компьютер
+# незачем: всё нужное уже есть на машинах GitHub. Папка android/ здесь не хранится —
+# Capacitor генерирует её на каждой сборке из capacitor.config.ts, так что нечему
+# устаревать и нечего чинить вручную.
+
+name: Android APK
+
+# Только по кнопке «Run workflow» на вкладке Actions. На каждый коммит собирать
+# незачем: каждая сборка — это новый релиз и уведомление всем, кто подписан,
+# а версию приложения обновляют осознанно, а не по факту правки запятой.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # нужно, чтобы создать релиз и приложить к нему APK
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Собрать веб-часть
+        run: npm run build:app
+
+      # Платформа компиляции задана в android/variables.gradle. На машине GitHub
+      # предустановлены не все версии, а Gradle без нужной падает уже на настройке.
+      - name: Доставить недостающие части Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" > /dev/null || true
+
+      - name: Создать проект Android
+        run: |
+          npx cap add android
+          npx cap sync android
+          node scripts/android-icons.mjs
+          # Флаг запуска теряется при распаковке пакета — без него Gradle не стартует.
+          chmod +x android/gradlew
+
+      # Версия приложения. Android разрешает установку поверх только если
+      # versionCode вырос, поэтому берём номер сборки — он всегда увеличивается.
+      - name: Проставить версию
+        run: |
+          VERSION_NAME="$(node -p "require('./package.json').version").${{ github.run_number }}"
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"$VERSION_NAME\"/" android/app/build.gradle
+          echo "VERSION_NAME=$VERSION_NAME" >> "$GITHUB_ENV"
+          grep -E 'versionCode|versionName' android/app/build.gradle
+
+      - name: Проверить наличие ключа подписи
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Секрет KEYSTORE_BASE64 не задан — собираю отладочный APK. Он ставится и работает, но подписан одноразовым ключом: следующая сборка не установится поверх этой. Запустите 'npm run keystore' и добавьте секреты."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Собрать подписанный APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/wallet.jks"
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+          # Подписываем не через Gradle, а вручную: так в build.gradle не нужно
+          # вписывать пароли, и сгенерированный проект остаётся нетронутым.
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          UNSIGNED=app/build/outputs/apk/release/app-release-unsigned.apk
+
+          "$BUILD_TOOLS/zipalign" -p 4 "$UNSIGNED" aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$RUNNER_TEMP/wallet.jks" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$RUNNER_TEMP/koshelek.apk" \
+            aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/koshelek.apk"
+
+      - name: Собрать отладочный APK
+        if: steps.signing.outputs.ready != 'true'
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/koshelek.apk"
+
+      - name: Приложить APK к сборке
+        uses: actions/upload-artifact@v4
+        with:
+          name: koshelek-apk
+          path: ${{ runner.temp }}/koshelek.apk
+
+      # Артефакт выше скачивается только с логином на GitHub и живёт 90 дней.
+      # Релиз даёт постоянную прямую ссылку, которую можно послать кому угодно.
+      # Публикуем через встроенный gh: сторонние действия в цепочке сборки
+      # подписанного приложения — лишний доступ к ключу.
+      - name: Опубликовать релиз
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md << 'EOF'
+          Приложение «Кошелёк» для Android.
+
+          Скачайте `koshelek.apk` и откройте файл на телефоне. Android спросит
+          разрешение установить приложение из этого источника — для программ
+          не из Play Маркета это обычное дело.
+
+          Данные хранятся только на телефоне и никуда не отправляются.
+          EOF
+
+          gh release create "v$VERSION_NAME" "$RUNNER_TEMP/koshelek.apk#koshelek.apk" \
+            --title "Кошелёк $VERSION_NAME" \
+            --notes-file notes.md
