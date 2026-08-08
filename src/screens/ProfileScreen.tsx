@@ -3,7 +3,8 @@ import { BudgetSheet } from '../components/BudgetSheet'
 import { InstallSheet } from '../components/InstallSheet'
 import { PinSheet } from '../components/PinSheet'
 import { actions, useFinance } from '../data/store'
-import { exportBackup, readBackup } from '../lib/backup'
+import type { FinanceData } from '../data/types'
+import { canShareBackup, exportBackup, isBackupDue, readBackup, shareBackup } from '../lib/backup'
 import { exportCsv } from '../lib/csv'
 import { formatMoney } from '../lib/money'
 import { plural } from '../lib/text'
@@ -23,11 +24,31 @@ export function ProfileScreen() {
   const hasPin = Boolean(data.settings.pinHash)
   const installed = isNativeApp() || isStandalone()
   const risk = storageRisk()
-  const backup = backupState(data.settings.lastBackupAt, data.operations.length, risk)
+  const backup = backupState(data)
+
+  function markSaved() {
+    actions.updateSettings({
+      lastBackupAt: new Date().toISOString(),
+      // Копия есть — отложенное напоминание больше не нужно.
+      backupRemindedAt: undefined,
+    })
+  }
 
   function handleBackup() {
     exportBackup(data)
-    actions.updateSettings({ lastBackupAt: new Date().toISOString() })
+    markSaved()
+  }
+
+  async function handleShare() {
+    const result = await shareBackup(data)
+
+    if (result === 'cancelled') {
+      setNotice({ text: 'Отправка отменена — копия не сохранена', error: true })
+      return
+    }
+
+    markSaved()
+    setNotice({ text: result === 'shared' ? 'Копия отправлена' : 'Копия скачана' })
   }
 
   async function handleImport(file: File) {
@@ -99,10 +120,18 @@ export function ProfileScreen() {
           hint="Таблица операций для Excel"
           onClick={() => exportCsv(data)}
         />
+        {canShareBackup() && (
+          <ActionRow
+            label="Отправить копию"
+            hint="В Telegram, на диск или в «Файлы»"
+            danger={backup.overdue}
+            onClick={handleShare}
+          />
+        )}
         <ActionRow
-          label="Резервная копия"
+          label="Скачать резервную копию"
           hint={backup.hint}
-          danger={backup.overdue}
+          danger={backup.overdue && !canShareBackup()}
           onClick={handleBackup}
         />
         <ActionRow
@@ -189,28 +218,29 @@ export function ProfileScreen() {
 /**
  * Стоит ли поторопить с резервной копией.
  *
- * Порог зависит от того, где запущено приложение: в APK данные защищены самой
- * системой, а иконка на iPhone исчезает вместе с данными от одного случайного
- * нажатия. Пустую базу не тревожим — терять нечего.
+ * Правило то же, что у напоминания в начале месяца, — иначе Профиль говорил бы
+ * «всё в порядке» ровно тогда, когда приложение просит сохраниться. Отложенное
+ * напоминание здесь не учитывается: «позже» убирает всплывающее окно, но не
+ * повод делать вид, что копия есть.
  */
-function backupState(
-  lastBackupAt: string | undefined,
-  operations: number,
-  risk: ReturnType<typeof storageRisk>,
-): { hint: string; overdue: boolean } {
-  if (operations === 0) return { hint: 'Файл со всеми данными', overdue: false }
+function backupState(data: FinanceData): { hint: string; overdue: boolean } {
+  const { lastBackupAt } = data.settings
 
-  if (!lastBackupAt) {
-    return { hint: 'Копии ещё не было', overdue: risk !== 'safe' }
-  }
+  if (data.operations.length === 0) return { hint: 'Файл со всеми данными', overdue: false }
+
+  const overdue = isBackupDue({ lastBackupAt }, data.operations)
+
+  if (!lastBackupAt) return { hint: 'Копии ещё не было', overdue }
 
   const days = Math.floor((Date.now() - new Date(lastBackupAt).getTime()) / 86_400_000)
-  const limit = risk === 'safe' ? 90 : risk === 'fragile' ? 14 : 30
-
   const when =
-    days === 0 ? 'сегодня' : days === 1 ? 'вчера' : `${days} ${plural(days, 'день', 'дня', 'дней')} назад`
+    days === 0
+      ? 'сегодня'
+      : days === 1
+        ? 'вчера'
+        : `${days} ${plural(days, 'день', 'дня', 'дней')} назад`
 
-  return { hint: `Последняя копия — ${when}`, overdue: days > limit }
+  return { hint: `Последняя копия — ${when}`, overdue }
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {

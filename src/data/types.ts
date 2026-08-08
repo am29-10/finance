@@ -115,6 +115,8 @@ export interface Settings {
    * а на iPhone — до удаления иконки с домашнего экрана.
    */
   lastBackupAt?: string
+  /** Когда напоминание о копии отложили кнопкой «Позже». */
+  backupRemindedAt?: string
 }
 
 export interface FinanceData {

@@ -7,7 +7,9 @@ import { OperationsScreen } from './screens/OperationsScreen'
 import { AnalyticsScreen } from './screens/AnalyticsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { LoansScreen } from './screens/LoansScreen'
+import { BackupSheet } from './components/BackupSheet'
 import { actions, useFinance } from './data/store'
+import { isBackupDue } from './lib/backup'
 import type { Operation } from './data/types'
 
 const TAB_KEY = 'finance:tab'
@@ -51,6 +53,18 @@ export default function App() {
 
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
+
+  /**
+   * Проверяем один раз при запуске, а не на каждое изменение данных: иначе
+   * напоминание всплыло бы поверх формы ровно в тот момент, когда человек
+   * вводит сумму.
+   */
+  const [backupOpen, setBackupOpen] = useState(false)
+
+  useEffect(() => {
+    if (isBackupDue(data.settings, data.operations)) setBackupOpen(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const [sheet, setSheet] = useState<{ operation?: Operation } | null>(null)
@@ -113,6 +127,8 @@ export default function App() {
           onClose={closeSheet}
         />
       )}
+
+      <BackupSheet open={backupOpen} onClose={() => setBackupOpen(false)} />
     </div>
   )
 }
