@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { OperationRow } from '../components/OperationRow'
-import { categoryById, sortedOperations, useFinance } from '../data/store'
+import { accountById, categoryById, sortedOperations, useFinance } from '../data/store'
 import type { Operation, OperationType } from '../data/types'
 import { formatDayHeading } from '../lib/date'
 import { formatMoney } from '../lib/money'
@@ -80,6 +80,8 @@ export function OperationsScreen({ onEdit }: OperationsScreenProps) {
                     key={operation.id}
                     operation={operation}
                     category={categoryById(data, operation.categoryId)}
+                    account={accountById(data, operation.accountId)}
+                    toAccount={operation.toAccountId ? accountById(data, operation.toAccountId) : undefined}
                     onClick={() => onEdit(operation)}
                   />
                 ))}

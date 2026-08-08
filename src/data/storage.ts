@@ -1,4 +1,5 @@
 import { defaultCategories, LOAN_CATEGORY_ID, loanCategory } from './categories'
+import { defaultAccount } from './accounts'
 import type { Category } from './types'
 import { DEFAULT_SETTINGS, SCHEMA_VERSION, type FinanceData } from './types'
 
@@ -37,14 +38,25 @@ export const localStorageAdapter: StorageAdapter = {
 export function migrate(data: FinanceData): FinanceData {
   const categories = data.categories?.length ? data.categories : defaultCategories()
 
+  /**
+   * v2 → v3: появились счета. У операций из старых баз счёта нет, и без него
+   * они выпали бы из любого остатка — переселяем всю историю на первый счёт,
+   * создав его, если счетов ещё не было.
+   */
+  const accounts = data.accounts?.length ? data.accounts : [defaultAccount()]
+  const fallback = accounts[0].id
+
   return {
     version: SCHEMA_VERSION,
-    operations: data.operations ?? [],
+    operations: (data.operations ?? []).map((operation) =>
+      operation.accountId ? operation : { ...operation, accountId: fallback },
+    ),
     // v1 → v2: у старых баз нет категории кредитов, но операции по ним уже могут
     // создаваться сразу после обновления — дозаводим её, не трогая остальные.
     categories: withLoanCategory(categories),
+    accounts,
     loans: data.loans ?? [],
-    settings: { ...DEFAULT_SETTINGS, ...data.settings },
+    settings: { ...DEFAULT_SETTINGS, ...data.settings, rates: data.settings?.rates ?? {} },
   }
 }
 
@@ -58,6 +70,7 @@ export function emptyData(): FinanceData {
     version: SCHEMA_VERSION,
     operations: [],
     categories: defaultCategories(),
+    accounts: [defaultAccount()],
     loans: [],
     settings: { ...DEFAULT_SETTINGS },
   }

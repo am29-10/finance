@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { actions, useFinance } from '../data/store'
-import { formatAmountInput, parseAmount } from '../lib/money'
+import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 
 interface BudgetSheetProps {
   open: boolean
@@ -13,7 +13,7 @@ export function BudgetSheet({ open, onClose }: BudgetSheetProps) {
   const current = data.settings.monthlyBudget
 
   const [amount, setAmount] = useState(
-    current > 0 ? formatAmountInput(String(current / 100).replace('.', ',')) : '',
+    current > 0 ? toAmountInput(current) : '',
   )
 
   const parsed = parseAmount(amount)

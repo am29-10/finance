@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { Field, Segmented, ToggleRow } from './Field'
-import { actions } from '../data/store'
+import { accountBalance, actions, activeAccounts, useFinance } from '../data/store'
 import type { EarlyMode, Loan, LoanKind, LoanScheme } from '../data/types'
 import { formatFullDate, fromDateKey, todayKey } from '../lib/date'
 import { annuityPayment, formatRate, formatTerm, loanStats, parseRate } from '../lib/loan'
-import { formatAmountInput, formatMoney, parseAmount } from '../lib/money'
+import { formatAmountInput, formatMoney, parseAmount, toAmountInput } from '../lib/money'
 
 interface LoanSheetProps {
   open: boolean
@@ -23,6 +23,8 @@ const KINDS: Array<{ value: LoanKind; label: string }> = [
 ]
 
 export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
+  const data = useFinance()
+  const accounts = activeAccounts(data)
   const isEditing = Boolean(loan)
 
   const [title, setTitle] = useState(loan?.title ?? '')
@@ -46,6 +48,7 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
   const [scheme, setScheme] = useState<LoanScheme>(loan?.scheme ?? 'annuity')
   const [earlyMode, setEarlyMode] = useState<EarlyMode>(loan?.earlyMode ?? 'term')
   const [autoExpense, setAutoExpense] = useState(loan?.autoExpense ?? true)
+  const [accountId, setAccountId] = useState(() => loan?.accountId ?? accounts[0]?.id ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
   const principal = parseAmount(amount)
@@ -75,6 +78,7 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
       scheme,
       earlyMode,
       autoExpense,
+      accountId,
     }
 
     if (loan) actions.updateLoan(loan.id, payload)
@@ -230,6 +234,39 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
           />
         </Field>
 
+        {accounts.length > 1 && (
+          <Field
+            label="С какого счёта списывается"
+            hint="Платежи по графику будут уменьшать остаток этого счёта."
+          >
+            <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
+              {accounts.map((account) => (
+                <button
+                  key={account.id}
+                  onClick={() => setAccountId(account.id)}
+                  className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-bg"
+                >
+                  <span
+                    className="flex size-5 shrink-0 items-center justify-center rounded-full transition-all duration-200"
+                    style={{
+                      border:
+                        account.id === accountId
+                          ? `6px solid ${account.color}`
+                          : '2px solid #d6dbe1',
+                    }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-[15px] font-medium">
+                    {account.title}
+                  </span>
+                  <span className="shrink-0 text-[13px] tabular-nums text-muted">
+                    {formatMoney(accountBalance(data, account.id), { currency: account.currency })}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
+
         <ToggleRow
           label="Учитывать платежи в расходах"
           hint="Банк списывает платёж сам — приложение будет добавлять его в расходы в категорию «Кредиты и ипотека»."
@@ -277,10 +314,6 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
       </div>
     </Sheet>
   )
-}
-
-function toAmountInput(cents: number): string {
-  return formatAmountInput(String(cents / 100).replace('.', ','))
 }
 
 function parseTerm(input: string, unit: 'years' | 'months'): number | null {

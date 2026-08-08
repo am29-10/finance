@@ -2,12 +2,14 @@ import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { Field } from './Field'
 import { CategoryIcon } from './CategoryIcon'
-import { actions, activeLoans, categoriesOf, useFinance } from '../data/store'
+import { accountBalance, actions, activeAccounts, activeLoans, categoriesOf, useFinance } from '../data/store'
 import { LOAN_CATEGORY_ID } from '../data/categories'
-import type { Operation, OperationType } from '../data/types'
-import { formatAmountInput, formatMoney, parseAmount } from '../lib/money'
+import type { Account, FinanceData, Operation, OperationType } from '../data/types'
+import { formatAmountInput, formatMoney, parseAmount, toAmountInput } from '../lib/money'
 import { formatFullDate, todayKey } from '../lib/date'
 import { forecastPrepayment, formatTerm, loanStats } from '../lib/loan'
+import { accountIcon } from '../data/accounts'
+import { BASE_CURRENCY, currencySymbol } from '../lib/currency'
 
 interface OperationSheetProps {
   open: boolean
@@ -22,12 +24,30 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
 
   const [type, setType] = useState<OperationType>(operation?.type ?? 'expense')
   const [amount, setAmount] = useState(
-    operation ? formatAmountInput(String(operation.amount / 100).replace('.', ',')) : '',
+    operation ? toAmountInput(operation.amount) : '',
   )
   const [categoryId, setCategoryId] = useState(operation?.categoryId ?? 'products')
   const [date, setDate] = useState(operation?.date ?? todayKey())
   const [note, setNote] = useState(operation?.note ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  const accounts = activeAccounts(data)
+
+  const [accountId, setAccountId] = useState(
+    () => operation?.accountId ?? accounts[0]?.id ?? '',
+  )
+  const [toAccountId, setToAccountId] = useState(
+    () => operation?.toAccountId ?? accounts[1]?.id ?? '',
+  )
+  const [toAmount, setToAmount] = useState(() =>
+    operation?.toAmount ? toAmountInput(operation.toAmount) : '',
+  )
+
+  const isTransfer = type === 'transfer'
+  const fromAccount = accounts.find((a) => a.id === accountId)
+  const toAccount = accounts.find((a) => a.id === toAccountId)
+  const crossCurrency =
+    isTransfer && Boolean(fromAccount && toAccount) && fromAccount!.currency !== toAccount!.currency
 
   const loans = activeLoans(data)
 
@@ -41,7 +61,8 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
    */
   const [loanId, setLoanId] = useState<string | null>(() => (loans.length === 1 ? loans[0].id : null))
 
-  const categories = categoriesOf(data, type)
+  // У перевода категории нет — для списка берём расходные, он всё равно скрыт.
+  const categories = categoriesOf(data, isTransfer ? 'expense' : type)
   const parsed = parseAmount(amount)
 
   const isLoanCategory = type === 'expense' && categoryId === LOAN_CATEGORY_ID
@@ -57,17 +78,50 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
   const forecast =
     selectedLoan && applied !== null ? forecastPrepayment(selectedLoan, applied, date) : null
 
-  const canSave = parsed !== null && categories.some((c) => c.id === categoryId)
+  const parsedToAmount = parseAmount(toAmount)
+
+  const canSave = isTransfer
+    ? parsed !== null &&
+      Boolean(fromAccount && toAccount) &&
+      accountId !== toAccountId &&
+      (!crossCurrency || parsedToAmount !== null)
+    : parsed !== null && Boolean(fromAccount) && categories.some((c) => c.id === categoryId)
 
   function changeType(next: OperationType) {
     setType(next)
+    if (next === 'transfer') return
+
     // Категории у доходов и расходов разные — переносим выбор на первую подходящую.
     const first = categoriesOf(data, next)[0]
     if (first) setCategoryId(first.id)
   }
 
   function handleSave() {
-    if (parsed === null) return
+    if (parsed === null || !canSave) return
+
+    /**
+     * Перевод не имеет категории: он не доход и не расход, а перемещение между
+     * своими счетами. Категорию всё же записываем — модель требует строку, и
+     * пустая ломала бы старый код, который её читает.
+     */
+    if (isTransfer) {
+      const payload = {
+        type: 'transfer' as const,
+        amount: parsed,
+        categoryId: 'other-expense',
+        date,
+        note: note.trim() || undefined,
+        accountId,
+        toAccountId,
+        toAmount: crossCurrency ? (parsedToAmount ?? parsed) : undefined,
+      }
+
+      if (operation) actions.updateOperation(operation.id, payload)
+      else actions.addOperation(payload)
+
+      onClose()
+      return
+    }
 
     /**
      * Платёж по кредиту записывается не расходом, а досрочным погашением:
@@ -86,7 +140,17 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
       return
     }
 
-    const payload = { type, amount: parsed, categoryId, date, note: note.trim() || undefined }
+    const payload = {
+      type,
+      amount: parsed,
+      categoryId,
+      date,
+      note: note.trim() || undefined,
+      accountId,
+      // Операция могла быть переводом до правки — снимаем следы второго счёта.
+      toAccountId: undefined,
+      toAmount: undefined,
+    }
 
     if (operation) actions.updateOperation(operation.id, payload)
     else actions.addOperation(payload)
@@ -148,6 +212,11 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
           <TypeTab active={type === 'income'} tone="income" onClick={() => changeType('income')}>
             Доход
           </TypeTab>
+          {accounts.length > 1 && (
+            <TypeTab active={isTransfer} tone="transfer" onClick={() => changeType('transfer')}>
+              Перевод
+            </TypeTab>
+          )}
         </div>
 
         <Field label="Сумма">
@@ -161,9 +230,71 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
               autoFocus={!isEditing}
               className="min-w-0 flex-1 bg-transparent text-[30px] font-semibold tabular-nums outline-none placeholder:text-muted"
             />
-            <span className="text-[22px] font-medium text-muted">₽</span>
+            <span className="text-[22px] font-medium text-muted">
+              {currencySymbol(fromAccount?.currency ?? BASE_CURRENCY)}
+            </span>
           </div>
         </Field>
+
+        {isTransfer ? (
+          <>
+            <Field label="Откуда">
+              <AccountPicker
+                accounts={accounts}
+                data={data}
+                selected={accountId}
+                onSelect={setAccountId}
+              />
+            </Field>
+
+            <Field
+              label="Куда"
+              hint={
+                accountId === toAccountId
+                  ? 'Счёт получателя должен отличаться от счёта списания.'
+                  : undefined
+              }
+            >
+              <AccountPicker
+                accounts={accounts.filter((a) => a.id !== accountId)}
+                data={data}
+                selected={toAccountId}
+                onSelect={setToAccountId}
+              />
+            </Field>
+
+            {crossCurrency && (
+              <Field
+                label={`Сколько пришло на счёт «${toAccount?.title}»`}
+                hint="Валюты счетов разные. Курс сделки почти всегда отличается от курса в настройках, поэтому полученную сумму введите как в банке."
+              >
+                <div className="flex items-baseline gap-2 rounded-2xl bg-surface px-4 py-4">
+                  <input
+                    value={toAmount}
+                    onChange={(e) => setToAmount(formatAmountInput(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="0"
+                    className="min-w-0 flex-1 bg-transparent text-[24px] font-semibold tabular-nums outline-none placeholder:text-muted"
+                  />
+                  <span className="text-[18px] font-medium text-muted">
+                    {currencySymbol(toAccount?.currency ?? BASE_CURRENCY)}
+                  </span>
+                </div>
+              </Field>
+            )}
+          </>
+        ) : (
+          <>
+            {accounts.length > 1 && (
+              <Field label="Счёт">
+                <AccountPicker
+                  accounts={accounts}
+                  data={data}
+                  selected={accountId}
+                  onSelect={setAccountId}
+                />
+              </Field>
+            )}
 
         <Field label="Категория">
           <div className="grid grid-cols-4 gap-x-2 gap-y-4 rounded-2xl bg-surface px-3 py-4">
@@ -237,6 +368,8 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
             Эта операция не привязана к кредиту и на остаток долга не влияет — она просто расход
             в этой категории. Чтобы уменьшить долг, внесите платёж через раздел «Кредиты».
           </p>
+        )}
+          </>
         )}
 
         <Field label="Дата">
@@ -326,6 +459,56 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
   )
 }
 
+/** Выбор счёта: название, остаток и валюта — чтобы не гадать, откуда списывать. */
+function AccountPicker({
+  accounts,
+  data,
+  selected,
+  onSelect,
+}: {
+  accounts: Account[]
+  data: FinanceData
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  if (accounts.length === 0) {
+    return (
+      <p className="rounded-2xl bg-surface px-4 py-3.5 text-[13px] leading-snug text-muted">
+        Нет подходящего счёта. Заведите второй счёт на главной, чтобы переводить между ними.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {accounts.map((account) => {
+        const active = account.id === selected
+
+        return (
+          <button
+            key={account.id}
+            onClick={() => onSelect(account.id)}
+            className="flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200"
+            style={{
+              backgroundColor: 'var(--color-surface)',
+              boxShadow: active ? `0 0 0 2px ${account.color}` : 'none',
+            }}
+          >
+            <CategoryIcon icon={accountIcon(account.kind)} color={account.color} size={36} />
+
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-medium">{account.title}</span>
+              <span className="mt-0.5 block text-[12px] tabular-nums text-muted">
+                {formatMoney(accountBalance(data, account.id), { currency: account.currency })}
+              </span>
+            </span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function LoanChoice({
   title,
   meta,
@@ -367,15 +550,21 @@ function TypeTab({
   onClick: () => void
   children: React.ReactNode
 }) {
-  const color = tone === 'income' ? 'var(--color-brand)' : 'var(--color-danger)'
+  // Перевод не окрашиваем ни в зелёное, ни в красное: он ничего не прибавляет
+  // и не отнимает, а только перекладывает деньги между своими счетами.
+  const palette = {
+    income: { text: 'var(--color-brand)', background: '#2e7d6b14' },
+    expense: { text: 'var(--color-danger)', background: '#f4433612' },
+    transfer: { text: 'var(--color-violet)', background: '#7c6cf214' },
+  }[tone]
 
   return (
     <button
       onClick={onClick}
-      className="flex-1 rounded-xl py-2.5 text-[15px] font-semibold transition-all duration-200"
+      className="flex-1 rounded-xl py-2.5 text-[14px] font-semibold transition-all duration-200"
       style={{
-        backgroundColor: active ? (tone === 'income' ? '#2e7d6b14' : '#f4433612') : 'transparent',
-        color: active ? color : 'var(--color-muted)',
+        backgroundColor: active ? palette.background : 'transparent',
+        color: active ? palette.text : 'var(--color-muted)',
       }}
     >
       {children}

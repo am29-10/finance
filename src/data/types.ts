@@ -6,7 +6,18 @@
  * удаления операции сохранённый баланс разойдётся с историей и починить его будет нечем.
  */
 
-export type OperationType = 'income' | 'expense'
+/**
+ * Перевод — не доход и не расход, а перемещение денег между своими счетами.
+ *
+ * Без отдельного типа снятие наличных выглядело бы тратой в 30 тысяч, а
+ * пополнение вклада — тратой в миллион, и структура расходов превращалась бы
+ * в вымысел. В доходы и в аналитику переводы не попадают никогда, они меняют
+ * только остатки двух счетов.
+ */
+export type OperationType = 'income' | 'expense' | 'transfer'
+
+/** Типы, у которых есть категория и которые участвуют в аналитике. */
+export type FlowType = 'income' | 'expense'
 
 /** Дата в формате YYYY-MM-DD, всегда локальная, не UTC. */
 export type DateKey = string
@@ -23,6 +34,16 @@ export interface Operation {
   date: DateKey
   note?: string
   createdAt: string
+  /** Счёт, с которого ушли или на который пришли деньги. */
+  accountId: string
+  /** Счёт-получатель. Только у переводов. */
+  toAccountId?: string
+  /**
+   * Сколько пришло на счёт-получатель, если у счетов разные валюты.
+   * Курс сделки почти всегда отличается от курса в настройках, поэтому
+   * обменянную сумму человек вводит сам, а не мы её вычисляем.
+   */
+  toAmount?: number
   /** Кредит, платёж по которому породил эту операцию. Такие операции не редактируются вручную. */
   loanId?: string
   /**
@@ -32,10 +53,33 @@ export interface Operation {
   loanRef?: string
 }
 
+/* ── Счета ─────────────────────────────────────────────────────────────── */
+
+export type AccountKind = 'bank' | 'cash' | 'card' | 'deposit' | 'other'
+
+export interface Account {
+  id: string
+  /** Как человек его называет: «Сбер», «Наличные», «Доллары под подушкой». */
+  title: string
+  kind: AccountKind
+  /** Код валюты. Рублёвые счета складываются в итог как есть, остальные — по курсу. */
+  currency: string
+  /**
+   * Остаток на счёте до первой операции в приложении, в минорных единицах.
+   * Без него человеку пришлось бы заводить фиктивный доход, чтобы баланс сошёлся
+   * с реальностью, и этот доход навсегда испортил бы аналитику первого месяца.
+   */
+  initialBalance: number
+  color: string
+  /** Архивный счёт не предлагается в формах, но его история остаётся. */
+  archivedAt?: string
+  createdAt: string
+}
+
 export interface Category {
   id: string
   title: string
-  type: OperationType
+  type: FlowType
   /** Ключ иконки из CategoryIcon. */
   icon: string
   color: string
@@ -96,6 +140,8 @@ export interface Loan {
    * ровно на платёж по ипотеке, а это обычно самая крупная трата.
    */
   autoExpense: boolean
+  /** С какого счёта уходят платежи. Пусто — с первого активного. */
+  accountId?: string
   prepayments: Prepayment[]
   /** Кредит закрыт вручную: график больше не считается, операции не создаются. */
   closedAt?: string
@@ -117,19 +163,26 @@ export interface Settings {
   lastBackupAt?: string
   /** Когда напоминание о копии отложили кнопкой «Позже». */
   backupRemindedAt?: string
+  /**
+   * Курсы валют к рублю: сколько копеек стоит одна единица. 1 $ = 95,50 ₽ → 9550.
+   * Заполняются вручную — курс из интернета стоил бы работы без сети.
+   */
+  rates: Record<string, number>
 }
 
 export interface FinanceData {
   version: number
   operations: Operation[]
   categories: Category[]
+  accounts: Account[]
   loans: Loan[]
   settings: Settings
 }
 
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export const DEFAULT_SETTINGS: Settings = {
   name: '',
   monthlyBudget: 0,
+  rates: {},
 }

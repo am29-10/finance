@@ -2,9 +2,12 @@ import { useState } from 'react'
 import { BudgetCard } from '../components/BudgetCard'
 import { BudgetSheet } from '../components/BudgetSheet'
 import { LoansCard } from '../components/LoansCard'
+import { AccountsStrip } from '../components/AccountsStrip'
 import { DonutChart } from '../components/DonutChart'
 import { OperationRow } from '../components/OperationRow'
 import {
+  accountBalances,
+  accountById,
   categoryById,
   collapseToTop,
   operationsBetween,
@@ -33,9 +36,10 @@ interface HomeScreenProps {
   onEdit: (operation: Operation) => void
   onShowAll: () => void
   onOpenLoans: () => void
+  onOpenAccounts: () => void
 }
 
-export function HomeScreen({ onEdit, onShowAll, onOpenLoans }: HomeScreenProps) {
+export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: HomeScreenProps) {
   const data = useFinance()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [hidden, setHidden] = useState(() => localStorage.getItem(HIDDEN_KEY) === '1')
@@ -48,6 +52,7 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans }: HomeScreenProps) 
   )
   const monthTotals = totalsOf(monthOperations)
   const balance = totalBalance(data)
+  const balances = accountBalances(data)
 
   const expenseRows = collapseToTop(totalsByCategory(data, monthOperations, 'expense'))
   const recent = sortedOperations(data).slice(0, RECENT_LIMIT)
@@ -91,7 +96,7 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans }: HomeScreenProps) 
           </button>
         </div>
 
-        <p className="mt-1 text-[34px] font-bold tabular-nums">{money(balance)}</p>
+        <p className="mt-1 text-[34px] font-bold tabular-nums">{money(balance.amount)}</p>
 
         <div className="mt-5 flex gap-4">
           <div className="flex-1 rounded-2xl bg-white/10 px-3.5 py-3">
@@ -108,6 +113,13 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans }: HomeScreenProps) 
           </div>
         </div>
       </section>
+
+      <AccountsStrip
+        balances={balances}
+        missingRates={balance.missingRates}
+        hidden={hidden}
+        onOpen={onOpenAccounts}
+      />
 
       <div className="mt-3">
         <BudgetCard
@@ -189,6 +201,8 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans }: HomeScreenProps) 
               key={operation.id}
               operation={operation}
               category={categoryById(data, operation.categoryId)}
+              account={accountById(data, operation.accountId)}
+              toAccount={operation.toAccountId ? accountById(data, operation.toAccountId) : undefined}
               meta={formatDayHeading(operation.date)}
               onClick={() => onEdit(operation)}
             />

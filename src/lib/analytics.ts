@@ -1,4 +1,4 @@
-import type { FinanceData, Operation, OperationType } from '../data/types'
+import type { FinanceData, FlowType, Operation } from '../data/types'
 import { operationsBetween, totalsOf } from '../data/store'
 import { addDays, addMonths, endOfMonth, startOfMonth, startOfWeek, toDateKey } from './date'
 
@@ -51,7 +51,7 @@ export function series(
   period: Period,
   range: Range,
   operations: Operation[],
-  type: OperationType,
+  type: FlowType,
 ): Point[] {
   const sums = new Map<string, number>()
   for (const operation of operations) {
@@ -91,7 +91,7 @@ export function changeVsPrevious(
   data: FinanceData,
   period: Period,
   anchor: Date,
-  type: OperationType,
+  type: FlowType,
 ): { percent: number; down: boolean } | null {
   const current = pick(totalsOf(operationsIn(data, rangeOf(period, anchor))), type)
   const previous = pick(totalsOf(operationsIn(data, rangeOf(period, shift(period, anchor, -1)))), type)
@@ -104,7 +104,7 @@ export function changeVsPrevious(
   return { percent, down: current < previous }
 }
 
-function pick(totals: { income: number; expense: number }, type: OperationType): number {
+function pick(totals: { income: number; expense: number }, type: FlowType): number {
   return type === 'income' ? totals.income : totals.expense
 }
 

@@ -1,14 +1,16 @@
 import { useRef, useState } from 'react'
 import { BudgetSheet } from '../components/BudgetSheet'
 import { InstallSheet } from '../components/InstallSheet'
+import { RatesSheet } from '../components/RatesSheet'
 import { PinSheet } from '../components/PinSheet'
-import { actions, useFinance } from '../data/store'
+import { actions, activeAccounts, useFinance } from '../data/store'
 import type { FinanceData } from '../data/types'
 import { canShareBackup, exportBackup, isBackupDue, readBackup, shareBackup } from '../lib/backup'
 import { exportCsv } from '../lib/csv'
 import { formatMoney } from '../lib/money'
 import { plural } from '../lib/text'
 import { isNativeApp, isStandalone, storageRisk } from '../lib/platform'
+import { BASE_CURRENCY } from '../lib/currency'
 
 export function ProfileScreen() {
   const data = useFinance()
@@ -20,6 +22,33 @@ export function ProfileScreen() {
   const [confirmingPinOff, setConfirmingPinOff] = useState(false)
 
   const [installOpen, setInstallOpen] = useState(false)
+  const [ratesOpen, setRatesOpen] = useState(false)
+
+  /** Какая очистка ждёт подтверждения. Два нажатия — минимум для необратимого. */
+  const [clearing, setClearing] = useState<'operations' | 'all' | null>(null)
+
+  const foreignCurrencies = [
+    ...new Set(activeAccounts(data).map((a) => a.currency)),
+  ].filter((code) => code !== BASE_CURRENCY)
+
+  const loanCount = data.loans.length
+
+  function confirmClear(kind: 'operations' | 'all') {
+    if (clearing !== kind) {
+      setClearing(kind)
+      return
+    }
+
+    if (kind === 'operations') {
+      actions.clearOperations()
+      setNotice({ text: 'История операций удалена' })
+    } else {
+      actions.resetAll()
+      setNotice({ text: 'Приложение сброшено' })
+    }
+
+    setClearing(null)
+  }
 
   const hasPin = Boolean(data.settings.pinHash)
   const installed = isNativeApp() || isStandalone()
@@ -99,7 +128,16 @@ export function ProfileScreen() {
           }
           onClick={() => setBudgetOpen(true)}
         />
-        <ActionRow label="Валюта" value="₽ рубль" muted />
+        <ActionRow
+          label="Курсы валют"
+          hint={
+            foreignCurrencies.length > 0
+              ? `Для счетов в ${foreignCurrencies.join(', ')}`
+              : 'Понадобятся, если появится валютный счёт'
+          }
+          value={foreignCurrencies.length > 0 ? undefined : 'нет валютных счетов'}
+          onClick={() => setRatesOpen(true)}
+        />
       </Group>
 
       <Group title="Приложение">
@@ -173,6 +211,48 @@ export function ProfileScreen() {
         }}
       />
 
+      <Group title="Очистить данные">
+        <ActionRow
+          label={clearing === 'operations' ? 'Точно удалить всю историю?' : 'Удалить все операции'}
+          hint={
+            clearing === 'operations'
+              ? loanCount > 0
+                ? `Вместе с ними удалятся ${loanCount} ${plural(loanCount, 'кредит', 'кредита', 'кредитов')}: их платежи считаются из графика и вернулись бы обратно`
+                : 'Счета, бюджет и PIN останутся'
+              : `${data.operations.length} ${plural(data.operations.length, 'операция', 'операции', 'операций')} в истории`
+          }
+          danger={clearing === 'operations'}
+          onClick={() => confirmClear('operations')}
+        />
+        <ActionRow
+          label={clearing === 'all' ? 'Точно стереть вообще всё?' : 'Начать с нуля'}
+          hint={
+            clearing === 'all'
+              ? 'Операции, счета, кредиты, бюджет и PIN — без возврата'
+              : 'Полный сброс приложения'
+          }
+          danger={clearing === 'all'}
+          onClick={() => confirmClear('all')}
+        />
+      </Group>
+
+      {clearing && (
+        <p
+          className="-mt-3 mb-5 rounded-2xl px-4 py-3.5 text-[13px] leading-relaxed"
+          style={{ backgroundColor: '#f4433610' }}
+        >
+          Отменить это будет нечем. Если копии за сегодня нет — закройте это окно и сначала
+          сохраните её: одно нажатие выше.
+          <button
+            onClick={() => setClearing(null)}
+            className="mt-2 block font-medium"
+            style={{ color: 'var(--color-brand)' }}
+          >
+            Не удалять
+          </button>
+        </p>
+      )}
+
       <Group title="Безопасность">
         <ActionRow
           label={
@@ -211,6 +291,7 @@ export function ProfileScreen() {
       <BudgetSheet open={budgetOpen} onClose={() => setBudgetOpen(false)} />
       <PinSheet open={pinOpen} onClose={() => setPinOpen(false)} />
       <InstallSheet open={installOpen} onClose={() => setInstallOpen(false)} />
+      <RatesSheet open={ratesOpen} onClose={() => setRatesOpen(false)} />
     </div>
   )
 }

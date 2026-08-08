@@ -7,6 +7,7 @@ import { OperationsScreen } from './screens/OperationsScreen'
 import { AnalyticsScreen } from './screens/AnalyticsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { LoansScreen } from './screens/LoansScreen'
+import { AccountsScreen } from './screens/AccountsScreen'
 import { BackupSheet } from './components/BackupSheet'
 import { actions, useFinance } from './data/store'
 import { isBackupDue } from './lib/backup'
@@ -34,6 +35,7 @@ export default function App() {
    * а заходят сюда реже, чем в операции.
    */
   const [loansOpen, setLoansOpen] = useState(false)
+  const [accountsOpen, setAccountsOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(TAB_KEY, tab)
@@ -92,6 +94,16 @@ export default function App() {
     )
   }
 
+  if (accountsOpen) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-lg flex-col">
+        <main className="flex-1 pb-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <AccountsScreen onBack={() => setAccountsOpen(false)} />
+        </main>
+      </div>
+    )
+  }
+
   if (loansOpen) {
     return (
       <div className="mx-auto flex min-h-full max-w-lg flex-col">
@@ -110,6 +122,7 @@ export default function App() {
             onEdit={openSheet}
             onShowAll={() => setTab('operations')}
             onOpenLoans={() => setLoansOpen(true)}
+            onOpenAccounts={() => setAccountsOpen(true)}
           />
         )}
         {tab === 'operations' && <OperationsScreen onEdit={openSheet} />}

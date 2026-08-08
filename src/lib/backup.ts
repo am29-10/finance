@@ -1,9 +1,11 @@
 import { defaultCategories } from '../data/categories'
+import { defaultAccount } from '../data/accounts'
 import {
   DEFAULT_SETTINGS,
   SCHEMA_VERSION,
   type Category,
   type FinanceData,
+  type Account,
   type Loan,
   type Operation,
 } from '../data/types'
@@ -138,14 +140,41 @@ function normalize(input: unknown): FinanceData {
     ? (raw.categories.filter(isCategory) as Category[])
     : defaultCategories()
 
+  /**
+   * Копии, снятые до появления счетов, поля accounts не имеют. Заводим счёт
+   * по умолчанию и переселяем на него всю историю: операция без счёта не
+   * попала бы ни в один остаток и молча исчезла бы из баланса.
+   */
+  const accounts = Array.isArray(raw.accounts) && raw.accounts.length
+    ? (raw.accounts.filter(isAccount) as Account[])
+    : [defaultAccount()]
+
+  const fallback = accounts[0].id
+
   return {
     version: SCHEMA_VERSION,
-    operations: raw.operations.filter(isOperation),
+    operations: raw.operations
+      .filter(isOperation)
+      .map((o) => (o.accountId && accounts.some((a) => a.id === o.accountId) ? o : { ...o, accountId: fallback })),
     categories,
+    accounts,
     // Копии, снятые до появления кредитов, поля loans не имеют — это нормально.
     loans: Array.isArray(raw.loans) ? raw.loans.filter(isLoan) : [],
-    settings: { ...DEFAULT_SETTINGS, ...raw.settings },
+    settings: { ...DEFAULT_SETTINGS, ...raw.settings, rates: raw.settings?.rates ?? {} },
   }
+}
+
+function isAccount(value: unknown): value is Account {
+  if (typeof value !== 'object' || value === null) return false
+  const a = value as Partial<Account>
+
+  return (
+    typeof a.id === 'string' &&
+    typeof a.title === 'string' &&
+    typeof a.currency === 'string' &&
+    typeof a.initialBalance === 'number' &&
+    Number.isInteger(a.initialBalance)
+  )
 }
 
 function isLoan(value: unknown): value is Loan {
@@ -174,7 +203,7 @@ function isOperation(value: unknown): value is Operation {
 
   return (
     typeof o.id === 'string' &&
-    (o.type === 'income' || o.type === 'expense') &&
+    (o.type === 'income' || o.type === 'expense' || o.type === 'transfer') &&
     // Сумма обязана быть целым числом копеек — дробная означает чужой или испорченный формат.
     typeof o.amount === 'number' &&
     Number.isInteger(o.amount) &&

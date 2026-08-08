@@ -2,17 +2,19 @@ import { useSyncExternalStore } from 'react'
 import { LOAN_CATEGORY_ID } from './categories'
 import { emptyData, localStorageAdapter, type StorageAdapter } from './storage'
 import type {
+  Account,
   Category,
   DateKey,
   FinanceData,
+  FlowType,
   Loan,
   Operation,
-  OperationType,
   Prepayment,
   Settings,
 } from './types'
 import { duePayments } from '../lib/loan'
 import { todayKey } from '../lib/date'
+import { toBase } from '../lib/currency'
 
 let adapter: StorageAdapter = localStorageAdapter
 let state: FinanceData = reconcileLoans(adapter.load() ?? initial())
@@ -70,10 +72,16 @@ function newId(): string {
  * Функция идемпотентна: повторный вызов на тех же данных ничего не меняет.
  */
 function reconcileLoans(data: FinanceData, today: DateKey = todayKey()): FinanceData {
-  const desired = new Map<string, Pick<Operation, 'amount' | 'date' | 'note' | 'loanId' | 'loanRef'>>()
+  const desired = new Map<string, Pick<Operation, 'amount' | 'date' | 'note' | 'loanId' | 'loanRef' | 'accountId'>>()
+
+  const fallbackAccount = data.accounts.find((a) => !a.archivedAt)?.id ?? data.accounts[0]?.id
 
   for (const loan of data.loans ?? []) {
     if (loan.closedAt || !loan.autoExpense) continue
+
+    // Счёт списания: указанный у кредита, иначе первый активный.
+    const accountId = loan.accountId ?? fallbackAccount
+    if (!accountId) continue
 
     for (const row of duePayments(loan, today)) {
       desired.set(`${loan.id}|${row.date}`, {
@@ -82,6 +90,7 @@ function reconcileLoans(data: FinanceData, today: DateKey = todayKey()): Finance
         note: `${loan.title} — платёж ${row.index}`,
         loanId: loan.id,
         loanRef: row.date,
+        accountId,
       })
     }
 
@@ -95,6 +104,7 @@ function reconcileLoans(data: FinanceData, today: DateKey = todayKey()): Finance
         note: prepayment.note ?? `${loan.title} — досрочное погашение`,
         loanId: loan.id,
         loanRef: `p:${prepayment.id}`,
+        accountId,
       })
     }
   }
@@ -123,6 +133,7 @@ function reconcileLoans(data: FinanceData, today: DateKey = todayKey()): Finance
       operation.amount === want.amount &&
       operation.date === want.date &&
       operation.note === want.note &&
+      operation.accountId === want.accountId &&
       operation.categoryId === LOAN_CATEGORY_ID
     ) {
       next.push(operation)
@@ -260,11 +271,86 @@ export const actions = {
     const next = reconcileLoans(state)
     if (next !== state) setState(next)
   },
+
+  /* ── Счета ───────────────────────────────────────────────────────────── */
+
+  addAccount(input: Omit<Account, 'id' | 'createdAt'>): Account {
+    const account: Account = { ...input, id: newId(), createdAt: new Date().toISOString() }
+    setState({ ...state, accounts: [...state.accounts, account] })
+    return account
+  },
+
+  updateAccount(id: string, patch: Partial<Omit<Account, 'id' | 'createdAt'>>) {
+    setState({
+      ...state,
+      accounts: state.accounts.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+    })
+  },
+
+  /**
+   * Убрать счёт из обихода, сохранив историю.
+   *
+   * Полное удаление осиротило бы операции: они ссылаются на счёт, и без него
+   * их некуда отнести. Архивный счёт не предлагается в формах, но остатки и
+   * прошлые траты по нему остаются на месте.
+   */
+  archiveAccount(id: string) {
+    setState({
+      ...state,
+      accounts: state.accounts.map((a) =>
+        a.id === id ? { ...a, archivedAt: new Date().toISOString() } : a,
+      ),
+    })
+  },
+
+  unarchiveAccount(id: string) {
+    setState({
+      ...state,
+      accounts: state.accounts.map((a) => {
+        if (a.id !== id) return a
+        const { archivedAt: _archived, ...rest } = a
+        return rest
+      }),
+    })
+  },
+
+  /** Удалить счёт вместе со всеми его операциями. Без возврата. */
+  deleteAccount(id: string) {
+    setState(
+      reconcileLoans({
+        ...state,
+        accounts: state.accounts.filter((a) => a.id !== id),
+        operations: state.operations.filter(
+          (o) => o.accountId !== id && o.toAccountId !== id,
+        ),
+        loans: state.loans.filter((l) => l.accountId !== id),
+      }),
+    )
+  },
+
+  /* ── Очистка ─────────────────────────────────────────────────────────── */
+
+  /**
+   * Стереть историю операций, оставив счета, кредиты и настройки.
+   *
+   * Кредиты приходится удалять вместе с ней: их платежи не хранятся, а
+   * вычисляются из графика, и сверка вернула бы их обратно через секунду.
+   * Обещать очистку и тут же показать те же операции — хуже, чем честно
+   * сказать, что кредиты уйдут тоже.
+   */
+  clearOperations() {
+    setState({ ...state, operations: [], loans: [] })
+  },
+
+  /** Полный сброс: как будто приложение открыли впервые. */
+  resetAll() {
+    setState(emptyData())
+  },
 }
 
 /* ── Выборки ───────────────────────────────────────────────────────────── */
 
-export function categoriesOf(data: FinanceData, type: OperationType): Category[] {
+export function categoriesOf(data: FinanceData, type: FlowType): Category[] {
   return data.categories.filter((c) => c.type === type && !c.archivedAt)
 }
 
@@ -303,21 +389,96 @@ export interface Totals {
   balance: number
 }
 
+/**
+ * Доходы и расходы. Переводы игнорируются: они не создают и не уничтожают
+ * деньги, а перекладывают их между своими счетами, и в отчёте о тратах им
+ * делать нечего.
+ */
 export function totalsOf(operations: Operation[]): Totals {
   let income = 0
   let expense = 0
 
   for (const operation of operations) {
     if (operation.type === 'income') income += operation.amount
-    else expense += operation.amount
+    else if (operation.type === 'expense') expense += operation.amount
   }
 
   return { income, expense, balance: income - expense }
 }
 
-/** Общий баланс за всё время — то, что показано крупно на главной. */
-export function totalBalance(data: FinanceData): number {
-  return totalsOf(data.operations).balance
+/* ── Счета и остатки ───────────────────────────────────────────────────── */
+
+export function accountById(data: FinanceData, id: string): Account | undefined {
+  return data.accounts.find((account) => account.id === id)
+}
+
+export function activeAccounts(data: FinanceData): Account[] {
+  return data.accounts.filter((account) => !account.archivedAt)
+}
+
+/**
+ * Остаток на счёте в его собственной валюте: начальный остаток плюс всё, что
+ * пришло, минус всё, что ушло. Переводы двигают оба конца — с одного счёта
+ * снимается `amount`, на другой ложится `toAmount`, если валюты разные.
+ */
+export function accountBalance(data: FinanceData, accountId: string): number {
+  const account = accountById(data, accountId)
+  let balance = account?.initialBalance ?? 0
+
+  for (const operation of data.operations) {
+    if (operation.accountId === accountId) {
+      if (operation.type === 'income') balance += operation.amount
+      else balance -= operation.amount
+    } else if (operation.toAccountId === accountId) {
+      balance += operation.toAmount ?? operation.amount
+    }
+  }
+
+  return balance
+}
+
+export interface AccountBalance {
+  account: Account
+  /** Остаток в валюте счёта. */
+  amount: number
+  /** Он же в рублях; null — курс не задан, и приплюсовать его к итогу нечем. */
+  inBase: number | null
+}
+
+export function accountBalances(data: FinanceData): AccountBalance[] {
+  return activeAccounts(data).map((account) => {
+    const amount = accountBalance(data, account.id)
+    return { account, amount, inBase: toBase(amount, account.currency, data.settings.rates) }
+  })
+}
+
+export interface TotalBalance {
+  /** Сумма всех счетов в рублях. */
+  amount: number
+  /** Счета, которые в неё не вошли из-за незаданного курса. */
+  missingRates: string[]
+}
+
+/**
+ * Общий баланс — то, что показано крупно на главной.
+ *
+ * Считается по остаткам счетов, а не по одним операциям: у счёта бывает
+ * начальный остаток, заведённый до появления приложения, и без него итог
+ * расходился бы с реальностью с первого дня.
+ */
+export function totalBalance(data: FinanceData): TotalBalance {
+  let amount = 0
+  const missingRates: string[] = []
+
+  for (const row of accountBalances(data)) {
+    if (row.inBase === null) {
+      if (!missingRates.includes(row.account.currency)) missingRates.push(row.account.currency)
+      continue
+    }
+    amount += row.inBase
+  }
+
+  return { amount, missingRates }
 }
 
 export interface CategoryTotal {
@@ -330,7 +491,7 @@ export interface CategoryTotal {
 export function totalsByCategory(
   data: FinanceData,
   operations: Operation[],
-  type: OperationType,
+  type: FlowType,
 ): CategoryTotal[] {
   const sums = new Map<string, number>()
 

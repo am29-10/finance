@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { BarChart } from '../components/BarChart'
 import { totalsByCategory, totalsOf, useFinance } from '../data/store'
-import type { OperationType } from '../data/types'
+import type { FlowType } from '../data/types'
 import {
   averagePerDay,
   changeVsPrevious,
@@ -25,7 +25,7 @@ export function AnalyticsScreen() {
   const data = useFinance()
   const [period, setPeriod] = useState<Period>('month')
   const [anchor, setAnchor] = useState(() => new Date())
-  const [type, setType] = useState<OperationType>('expense')
+  const [type, setType] = useState<FlowType>('expense')
 
   const range = rangeOf(period, anchor)
   const operations = operationsIn(data, range)
@@ -168,7 +168,7 @@ export function AnalyticsScreen() {
 }
 
 /** Рост расходов — плохо, рост доходов — хорошо. */
-function isGood(down: boolean, type: OperationType): boolean {
+function isGood(down: boolean, type: FlowType): boolean {
   return type === 'income' ? !down : down
 }
 
