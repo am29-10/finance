@@ -34,6 +34,11 @@ export function startOfWeek(date: Date): Date {
   return addDays(new Date(date.getFullYear(), date.getMonth(), date.getDate()), -(iso - 1))
 }
 
+/** Полночь этого дня. Нужна там, где считают дни, а не мгновения. */
+export function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
 export function startOfMonth(date: Date): Date {
   return new Date(date.getFullYear(), date.getMonth(), 1)
 }
@@ -69,6 +74,18 @@ export function formatFullDate(key: DateKey): string {
     month: 'long',
     year: 'numeric',
   }).format(fromDateKey(key))
+}
+
+/** «май» или «май 2024», если год не текущий, — подпись периода внутри строки. */
+export function formatMonthInline(date: Date): string {
+  const sameYear = date.getFullYear() === new Date().getFullYear()
+
+  return new Intl.DateTimeFormat('ru-RU', {
+    month: 'long',
+    year: sameYear ? undefined : 'numeric',
+  })
+    .format(date)
+    .replace(' г.', '')
 }
 
 /** «Май 2024» — заголовок периода. */

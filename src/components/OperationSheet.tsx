@@ -1,10 +1,17 @@
 import { useState } from 'react'
 import { Sheet } from './Sheet'
-import { Field } from './Field'
+import { Field, Segmented } from './Field'
 import { CategoryIcon } from './CategoryIcon'
 import { accountBalance, actions, activeAccounts, activeLoans, categoriesOf, useFinance } from '../data/store'
 import { LOAN_CATEGORY_ID } from '../data/categories'
-import type { Account, FinanceData, Operation, OperationType } from '../data/types'
+import type {
+  Account,
+  FinanceData,
+  Operation,
+  OperationType,
+  RecurrencePeriod,
+} from '../data/types'
+import { PERIOD_SHORT } from '../lib/recurrence'
 import { formatAmountInput, formatMoney, parseAmount, toAmountInput } from '../lib/money'
 import { formatFullDate, todayKey } from '../lib/date'
 import { forecastPrepayment, formatTerm, loanStats } from '../lib/loan'
@@ -16,9 +23,11 @@ interface OperationSheetProps {
   /** Операция для правки; если не передана — создаём новую. */
   operation?: Operation
   onClose: () => void
+  /** Открыть экран счетов — предлагается, когда счетов ещё нет. */
+  onAddAccount?: () => void
 }
 
-export function OperationSheet({ open, operation, onClose }: OperationSheetProps) {
+export function OperationSheet({ open, operation, onClose, onAddAccount }: OperationSheetProps) {
   const data = useFinance()
   const isEditing = Boolean(operation)
 
@@ -30,6 +39,14 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
   const [date, setDate] = useState(operation?.date ?? todayKey())
   const [note, setNote] = useState(operation?.note ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
+
+  /**
+   * Повтор заводится вместе с первой операцией: подписку вспоминают ровно в тот
+   * момент, когда её вносят, и отдельный экран «добавить регулярный платёж»
+   * человек не пойдёт искать. Для правки не показываем — правило уже живёт
+   * своей жизнью, и менять его нужно там, где им управляют.
+   */
+  const [repeat, setRepeat] = useState<RecurrencePeriod | null>(null)
 
   const accounts = activeAccounts(data)
 
@@ -117,7 +134,7 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
       }
 
       if (operation) actions.updateOperation(operation.id, payload)
-      else actions.addOperation(payload)
+      else saveWithRepeat(payload)
 
       onClose()
       return
@@ -153,9 +170,37 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
     }
 
     if (operation) actions.updateOperation(operation.id, payload)
-    else actions.addOperation(payload)
+    else saveWithRepeat(payload)
 
     onClose()
+  }
+
+  /**
+   * Сохранить операцию и, если попросили повторять, правило вместе с ней.
+   *
+   * Операция создаётся первой и получает ссылку на правило — так в списке
+   * видно, что запись пришла из повтора, а сверка не заведёт за этот же день
+   * вторую такую же.
+   */
+  function saveWithRepeat(payload: Omit<Operation, 'id' | 'createdAt'>) {
+    if (!repeat) {
+      actions.addOperation(payload)
+      return
+    }
+
+    const rule = actions.addRecurrence({
+      type: payload.type,
+      amount: payload.amount,
+      categoryId: payload.categoryId,
+      accountId: payload.accountId,
+      toAccountId: payload.toAccountId,
+      toAmount: payload.toAmount,
+      note: payload.note,
+      period: repeat,
+      startDate: payload.date,
+    })
+
+    actions.addOperation({ ...payload, recurrenceId: rule.id })
   }
 
   function handleDelete() {
@@ -196,6 +241,35 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
             className="mt-1 w-full rounded-2xl bg-brand py-4 text-[17px] font-semibold text-white transition-all duration-200 active:scale-[0.98]"
           >
             Понятно
+          </button>
+        </div>
+      </Sheet>
+    )
+  }
+
+  /**
+   * Операции живут на счетах: без счёта у суммы нет ни остатка, ни места, откуда
+   * она ушла. Поэтому вместо формы, которая всё равно не сохранится, отправляем
+   * заводить первый счёт.
+   */
+  if (accounts.length === 0) {
+    return (
+      <Sheet open={open} onClose={onClose} title="Сначала счёт">
+        <div className="flex flex-col gap-4">
+          <p className="px-1 text-[14px] leading-snug text-muted">
+            Операцию нужно куда-то записать: карта, наличные, вклад. Заведите счёт — на нём
+            появится остаток, и с него начнётся баланс. Счетов может быть сколько угодно, а
+            переброска денег между ними заводится переводом и не портит статистику трат.
+          </p>
+
+          <button
+            onClick={() => {
+              onClose()
+              onAddAccount?.()
+            }}
+            className="w-full rounded-2xl bg-brand py-4 text-[17px] font-semibold text-white transition-all duration-200 active:scale-[0.98]"
+          >
+            Добавить счёт
           </button>
         </div>
       </Sheet>
@@ -395,6 +469,29 @@ export function OperationSheet({ open, operation, onClose }: OperationSheetProps
             className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] outline-none placeholder:text-muted"
           />
         </Field>
+
+        {!isEditing && !selectedLoan && (
+          <Field
+            label="Повторять"
+            hint={
+              repeat
+                ? 'Приложение само заведёт такую же операцию в следующий срок. Сумму можно будет поправить — шаблон её не перезапишет.'
+                : undefined
+            }
+            optional
+          >
+            <Segmented
+              value={repeat ?? 'none'}
+              options={[
+                { value: 'none', label: 'Нет' },
+                { value: 'week', label: PERIOD_SHORT.week },
+                { value: 'month', label: PERIOD_SHORT.month },
+                { value: 'year', label: PERIOD_SHORT.year },
+              ]}
+              onChange={(value) => setRepeat(value === 'none' ? null : value)}
+            />
+          </Field>
+        )}
 
         {selectedLoan && forecast && applied !== null && (
           <div className="rounded-2xl bg-brand/8 px-4 py-3.5">

@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { LOAN_CATEGORY_ID } from './categories'
+import { LOAN_CATEGORY_ID, REST_COLOR } from './categories'
 import { emptyData, localStorageAdapter, type StorageAdapter } from './storage'
 import type {
   Account,
@@ -10,14 +10,16 @@ import type {
   Loan,
   Operation,
   Prepayment,
+  Recurrence,
   Settings,
 } from './types'
 import { duePayments } from '../lib/loan'
 import { todayKey } from '../lib/date'
+import { occurrencesBetween } from '../lib/recurrence'
 import { toBase } from '../lib/currency'
 
 let adapter: StorageAdapter = localStorageAdapter
-let state: FinanceData = reconcileLoans(adapter.load() ?? initial())
+let state: FinanceData = applyRecurrences(reconcileLoans(adapter.load() ?? initial()))
 
 const listeners = new Set<() => void>()
 
@@ -27,8 +29,8 @@ function initial(): FinanceData {
   return fresh
 }
 
-// Синхронизация на старте могла дозавести платежи за прошедшие месяцы — сохраняем сразу,
-// иначе они пересоздавались бы при каждом запуске с новыми идентификаторами.
+// Синхронизация на старте могла дозавести платежи и повторы за прошедшие месяцы —
+// сохраняем сразу, иначе они пересоздавались бы при каждом запуске с новыми идентификаторами.
 adapter.save(state)
 
 function setState(next: FinanceData) {
@@ -165,6 +167,64 @@ function setLoans(loans: Loan[]) {
   setState(reconcileLoans({ ...state, loans }))
 }
 
+/* ── Повторяющиеся операции ────────────────────────────────────────────── */
+
+/**
+ * Заводит операции по правилам повтора за всё время, что приложение не открывали.
+ *
+ * Принципиально отличается от сверки кредитов: та каждый раз приводит операции
+ * к расчёту, а эта только создаёт недостающие. Платёж по кредиту — производная
+ * от графика, а повторяющаяся операция — обычная запись: аренда выросла на
+ * тысячу, человек поправил сумму за этот месяц, и затирать его правку шаблоном
+ * нельзя. Ровно поэтому и удалённая операция не возвращается — до какой даты
+ * уже создавали, помнит `lastRunAt`.
+ *
+ * Функция идемпотентна: повторный вызов в тот же день ничего не добавляет.
+ */
+export function applyRecurrences(data: FinanceData, today: DateKey = todayKey()): FinanceData {
+  const created: Operation[] = []
+  let changed = false
+
+  const recurrences = (data.recurrences ?? []).map((rule) => {
+    if (rule.pausedAt) return rule
+
+    // Счёт могли удалить или заархивировать — списывать стало неоткуда.
+    const account = accountById(data, rule.accountId)
+    if (!account || account.archivedAt) return rule
+
+    const dates = occurrencesBetween(rule, today, rule.lastRunAt)
+    if (dates.length === 0) {
+      return rule.lastRunAt === today ? rule : { ...rule, lastRunAt: today }
+    }
+
+    for (const date of dates) {
+      created.push({
+        id: newId(),
+        type: rule.type,
+        amount: rule.amount,
+        categoryId: rule.categoryId,
+        date,
+        note: rule.note,
+        accountId: rule.accountId,
+        toAccountId: rule.toAccountId,
+        toAmount: rule.toAmount,
+        recurrenceId: rule.id,
+        createdAt: new Date().toISOString(),
+      })
+    }
+
+    changed = true
+    return { ...rule, lastRunAt: today }
+  })
+
+  // Отметка `lastRunAt` двигается каждый день, но сохранять из-за неё новое
+  // состояние стоит только вместе с операциями — иначе запись в хранилище
+  // и перерисовка экрана происходили бы на ровном месте.
+  if (!changed) return data
+
+  return { ...data, operations: [...data.operations, ...created], recurrences }
+}
+
 export const actions = {
   addOperation(input: Omit<Operation, 'id' | 'createdAt'>): Operation {
     const operation: Operation = { ...input, id: newId(), createdAt: new Date().toISOString() }
@@ -263,13 +323,67 @@ export const actions = {
   },
 
   /**
-   * Досоздать платежи, у которых наступил срок. Вызывается при запуске и при
-   * возврате в приложение: без этого расход за новый месяц появится только
-   * после того, как человек сам что-нибудь нажмёт.
+   * Досоздать всё, у чего наступил срок: платежи по кредитам и повторяющиеся
+   * операции. Вызывается при запуске и при возврате в приложение — без этого
+   * расход за новый месяц появился бы только после того, как человек сам
+   * что-нибудь нажмёт.
    */
-  syncLoans() {
-    const next = reconcileLoans(state)
+  sync() {
+    const next = applyRecurrences(reconcileLoans(state))
     if (next !== state) setState(next)
+  },
+
+  /* ── Повторяющиеся операции ──────────────────────────────────────────── */
+
+  /**
+   * Завести правило повтора. `lastRunAt` ставится на дату первой операции:
+   * её человек уже создал руками в форме, и сверка не должна её задвоить.
+   */
+  addRecurrence(input: Omit<Recurrence, 'id' | 'createdAt'>): Recurrence {
+    const rule: Recurrence = {
+      ...input,
+      lastRunAt: input.lastRunAt ?? input.startDate,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+    }
+
+    setState({ ...state, recurrences: [...state.recurrences, rule] })
+    return rule
+  },
+
+  updateRecurrence(id: string, patch: Partial<Omit<Recurrence, 'id' | 'createdAt'>>) {
+    setState({
+      ...state,
+      recurrences: state.recurrences.map((rule) =>
+        rule.id === id ? { ...rule, ...patch } : rule,
+      ),
+    })
+  },
+
+  /** Остановить повтор, не трогая уже созданные операции. */
+  pauseRecurrence(id: string) {
+    actions.updateRecurrence(id, { pausedAt: new Date().toISOString() })
+  },
+
+  /**
+   * Возобновить повтор. Пропущенное за время паузы не досоздаётся: человек
+   * выключил повтор осознанно, и получить за это пачку операций задним числом
+   * он точно не рассчитывал.
+   */
+  resumeRecurrence(id: string) {
+    setState({
+      ...state,
+      recurrences: state.recurrences.map((rule) => {
+        if (rule.id !== id) return rule
+        const { pausedAt: _paused, ...rest } = rule
+        return { ...rest, lastRunAt: todayKey() }
+      }),
+    })
+  },
+
+  /** Удалить правило. Созданные им операции остаются: это уже потраченные деньги. */
+  deleteRecurrence(id: string) {
+    setState({ ...state, recurrences: state.recurrences.filter((rule) => rule.id !== id) })
   },
 
   /* ── Счета ───────────────────────────────────────────────────────────── */
@@ -324,6 +438,10 @@ export const actions = {
           (o) => o.accountId !== id && o.toAccountId !== id,
         ),
         loans: state.loans.filter((l) => l.accountId !== id),
+        // Повтор без счёта списывать не с чего — он бы молча перестал работать.
+        recurrences: state.recurrences.filter(
+          (rule) => rule.accountId !== id && rule.toAccountId !== id,
+        ),
       }),
     )
   },
@@ -383,6 +501,43 @@ export function operationsBetween(data: FinanceData, from: DateKey, to: DateKey)
   return data.operations.filter((o) => o.date >= from && o.date <= to)
 }
 
+export interface OperationGroup {
+  key: string
+  /** Хотя бы одна; если ровно одна — группировать было нечего. */
+  operations: Operation[]
+}
+
+/**
+ * Схлопывает однотипные операции в группы.
+ *
+ * Три поездки на такси за день — это одна мысль «на такси ушло 900 ₽», а не три
+ * строки, между которыми теряется всё остальное. Однотипность — это совпадение
+ * типа, категории (у переводов — пары счетов) и валюты: суммы в группе
+ * складываются, а рубли с долларами складывать нельзя.
+ *
+ * Порядок групп — по первой операции каждой, поэтому исходная сортировка списка
+ * сохраняется. Внутри дня список уже отсортирован, так что группировать нужно
+ * именно поданный кусок, а не всю историю.
+ */
+export function groupSimilar(data: FinanceData, operations: Operation[]): OperationGroup[] {
+  const groups = new Map<string, OperationGroup>()
+
+  for (const operation of operations) {
+    const currency = accountById(data, operation.accountId)?.currency ?? ''
+
+    const key =
+      operation.type === 'transfer'
+        ? `transfer|${operation.accountId}|${operation.toAccountId}|${currency}`
+        : `${operation.type}|${operation.categoryId}|${currency}`
+
+    const group = groups.get(key)
+    if (group) group.operations.push(operation)
+    else groups.set(key, { key, operations: [operation] })
+  }
+
+  return [...groups.values()]
+}
+
 export interface Totals {
   income: number
   expense: number
@@ -414,6 +569,11 @@ export function accountById(data: FinanceData, id: string): Account | undefined 
 
 export function activeAccounts(data: FinanceData): Account[] {
   return data.accounts.filter((account) => !account.archivedAt)
+}
+
+/** Работающие правила повтора — те, что заведут операцию в свой срок. */
+export function activeRecurrences(data: FinanceData): Recurrence[] {
+  return data.recurrences.filter((rule) => !rule.pausedAt)
 }
 
 /**
@@ -532,7 +692,7 @@ export function collapseToTop(rows: CategoryTotal[], limit = 5): CategoryTotal[]
         title: 'Другое',
         type: tail[0].category.type,
         icon: 'dots',
-        color: '#94a3b8',
+        color: REST_COLOR,
       },
       amount: tail.reduce((acc, row) => acc + row.amount, 0),
       share: tail.reduce((acc, row) => acc + row.share, 0),

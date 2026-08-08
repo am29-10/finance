@@ -1,6 +1,14 @@
 import type { FinanceData, FlowType, Operation } from '../data/types'
 import { operationsBetween, totalsOf } from '../data/store'
-import { addDays, addMonths, endOfMonth, startOfMonth, startOfWeek, toDateKey } from './date'
+import {
+  addDays,
+  addMonths,
+  endOfMonth,
+  startOfDay,
+  startOfMonth,
+  startOfWeek,
+  toDateKey,
+} from './date'
 
 export type Period = 'week' | 'month' | 'year'
 
@@ -113,20 +121,30 @@ function pick(totals: { income: number; expense: number }, type: FlowType): numb
  * иначе незаконченный месяц занижал бы среднее в разы.
  */
 export function averagePerDay(total: number, range: Range): number {
-  const today = new Date()
+  const today = startOfDay(new Date())
   const last = today < range.to ? today : range.to
-  const days = Math.max(1, Math.round((last.getTime() - range.from.getTime()) / 86400000) + 1)
-  return Math.round(total / days)
+  return Math.round(total / Math.max(1, daysBetween(range.from, last)))
 }
 
 /** Сколько будет потрачено к концу месяца, если темп сохранится. Только для текущего месяца. */
 export function forecast(total: number, range: Range): number | null {
-  const today = new Date()
-  if (today < range.from || today > range.to) return null
+  const today = startOfDay(new Date())
+  if (today < startOfDay(range.from) || today > range.to) return null
 
-  const lived = Math.round((today.getTime() - range.from.getTime()) / 86400000) + 1
-  const all = Math.round((range.to.getTime() - range.from.getTime()) / 86400000) + 1
+  const lived = daysBetween(range.from, today)
+  const all = daysBetween(range.from, range.to)
   if (lived >= all || lived < 3) return null
 
   return Math.round((total / lived) * all)
+}
+
+/**
+ * Сколько календарных дней в отрезке, считая оба конца.
+ *
+ * Дни считаем от полуночи, а не от текущего мгновения: иначе «прожито дней»
+ * увеличивалось бы на единицу в середине суток, и среднее с прогнозом
+ * прыгали бы после обеда без единой новой операции.
+ */
+function daysBetween(from: Date, to: Date): number {
+  return Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / 86_400_000) + 1
 }

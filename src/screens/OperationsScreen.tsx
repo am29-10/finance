@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { OperationRow } from '../components/OperationRow'
-import { accountById, categoryById, sortedOperations, useFinance } from '../data/store'
+import { OperationGroupRow } from '../components/OperationGroupRow'
+import { accountById, categoryById, groupSimilar, sortedOperations, useFinance } from '../data/store'
 import type { Operation, OperationType } from '../data/types'
 import { formatDayHeading } from '../lib/date'
 import { formatMoney } from '../lib/money'
@@ -38,7 +39,11 @@ export function OperationsScreen({ onEdit }: OperationsScreenProps) {
       else byDay.set(operation.date, [operation])
     }
 
-    return [...byDay.entries()]
+    // Внутри дня однотипное сводится в одну строку — иначе день из десяти покупок
+    // читается как десять разных событий, хотя событие там одно.
+    return [...byDay.entries()].map(
+      ([date, operations]) => [date, operations, groupSimilar(data, operations)] as const,
+    )
   }, [data, filter, query])
 
   return (
@@ -67,7 +72,7 @@ export function OperationsScreen({ onEdit }: OperationsScreenProps) {
         </p>
       ) : (
         <div className="mt-6 flex flex-col gap-6">
-          {groups.map(([date, operations]) => (
+          {groups.map(([date, operations, similar]) => (
             <section key={date}>
               <div className="mb-2 flex items-baseline justify-between px-1">
                 <h2 className="text-[13px] font-semibold text-muted">{formatDayHeading(date)}</h2>
@@ -75,16 +80,38 @@ export function OperationsScreen({ onEdit }: OperationsScreenProps) {
               </div>
 
               <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
-                {operations.map((operation) => (
-                  <OperationRow
-                    key={operation.id}
-                    operation={operation}
-                    category={categoryById(data, operation.categoryId)}
-                    account={accountById(data, operation.accountId)}
-                    toAccount={operation.toAccountId ? accountById(data, operation.toAccountId) : undefined}
-                    onClick={() => onEdit(operation)}
-                  />
-                ))}
+                {similar.map((group) => {
+                  const first = group.operations[0]
+                  const category = categoryById(data, first.categoryId)
+                  const account = accountById(data, first.accountId)
+                  const toAccount = first.toAccountId
+                    ? accountById(data, first.toAccountId)
+                    : undefined
+
+                  if (group.operations.length === 1) {
+                    return (
+                      <OperationRow
+                        key={first.id}
+                        operation={first}
+                        category={category}
+                        account={account}
+                        toAccount={toAccount}
+                        onClick={() => onEdit(first)}
+                      />
+                    )
+                  }
+
+                  return (
+                    <OperationGroupRow
+                      key={group.key}
+                      operations={group.operations}
+                      category={category}
+                      account={account}
+                      toAccount={toAccount}
+                      onSelect={onEdit}
+                    />
+                  )
+                })}
               </div>
             </section>
           ))}

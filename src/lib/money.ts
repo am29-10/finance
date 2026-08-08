@@ -30,7 +30,7 @@ export function formatMoney(minor: number, options: FormatOptions = {}): string 
   return `${prefix}${formatted} ${currencySymbol(options.currency ?? BASE_CURRENCY)}`
 }
 
-/** Компактный формат для осей графиков: 56250000 → «56k». */
+/** Компактный формат для осей графиков: 5 625 000 копеек (56 250 ₽) → «56k». */
 export function formatCompact(minor: number): string {
   const units = Math.round(minor / 100)
   if (Math.abs(units) >= 1000) return `${Math.round(units / 1000)}k`

@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build && node scripts/spa-fallback.mjs",
     "build:app": "tsc --noEmit && vite build --mode app",
     "keystore": "node scripts/make-keystore.mjs",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -28,6 +29,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^3.2.7"
   }
 }

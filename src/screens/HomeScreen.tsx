@@ -16,6 +16,7 @@ import {
   totalsByCategory,
   totalsOf,
   useFinance,
+  type CategoryTotal,
 } from '../data/store'
 import type { Operation } from '../data/types'
 import {
@@ -23,6 +24,7 @@ import {
   endOfMonth,
   formatDayHeading,
   formatMonth,
+  formatMonthInline,
   isSameMonth,
   startOfMonth,
   toDateKey,
@@ -54,9 +56,11 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
   const balance = totalBalance(data)
   const balances = accountBalances(data)
 
+  const incomeRows = collapseToTop(totalsByCategory(data, monthOperations, 'income'))
   const expenseRows = collapseToTop(totalsByCategory(data, monthOperations, 'expense'))
   const recent = sortedOperations(data).slice(0, RECENT_LIMIT)
   const change = expenseChange(data, month)
+  const monthLabel = formatMonthInline(month)
 
   function toggleHidden() {
     setHidden((current) => {
@@ -69,18 +73,7 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
 
   return (
     <div className="px-4 pb-8">
-      <header className="flex items-start justify-between gap-4 px-1 pt-5 pb-5">
-        <div>
-          <h1 className="text-[24px] font-bold tracking-tight">
-            {data.settings.name ? `Привет, ${data.settings.name}!` : 'Привет!'} 👋
-          </h1>
-          <p className="mt-1 text-[14px] leading-snug text-muted">
-            Вот твоя финансовая картина на сегодня.
-          </p>
-        </div>
-      </header>
-
-      <section className="rounded-3xl bg-brand px-5 py-5 text-white">
+      <section className="mt-5 rounded-3xl bg-brand px-5 py-5 text-white">
         <div className="flex items-start justify-between">
           <span className="text-[13px] opacity-80">Баланс</span>
           <button
@@ -98,15 +91,16 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
 
         <p className="mt-1 text-[34px] font-bold tabular-nums">{money(balance.amount)}</p>
 
+        {/* Итоги месяца, а не всего времени, — поэтому месяц назван прямо в подписи. */}
         <div className="mt-5 flex gap-4">
           <div className="flex-1 rounded-2xl bg-white/10 px-3.5 py-3">
-            <span className="text-[12px] opacity-80">Доходы</span>
+            <span className="text-[12px] leading-tight opacity-80">Доходы за {monthLabel}</span>
             <p className="mt-0.5 text-[17px] font-semibold tabular-nums">
               {money(monthTotals.income)}
             </p>
           </div>
           <div className="flex-1 rounded-2xl bg-white/10 px-3.5 py-3">
-            <span className="text-[12px] opacity-80">Расходы</span>
+            <span className="text-[12px] leading-tight opacity-80">Расходы за {monthLabel}</span>
             <p className="mt-0.5 text-[17px] font-semibold tabular-nums">
               {money(monthTotals.expense)}
             </p>
@@ -139,15 +133,11 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
         <MonthSwitch month={month} onChange={setMonth} />
       </div>
 
-      {expenseRows.length === 0 ? (
-        <p className="rounded-2xl bg-surface px-5 py-8 text-center text-[14px] text-muted">
-          В этом месяце расходов пока нет
-        </p>
-      ) : (
-        <section className="rounded-2xl bg-surface px-4 py-5">
-          <DonutChart rows={expenseRows} />
-        </section>
-      )}
+      {/* Сначала откуда деньги пришли, потом куда ушли — в том порядке, в котором они движутся. */}
+      <FlowSection title="Доходы" rows={incomeRows} empty="В этом месяце доходов пока нет" />
+      <div className="mt-4">
+        <FlowSection title="Расходы" rows={expenseRows} empty="В этом месяце расходов пока нет" />
+      </div>
 
       {change && (
         <section
@@ -212,6 +202,33 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
 
       <BudgetSheet open={budgetOpen} onClose={() => setBudgetOpen(false)} />
     </div>
+  )
+}
+
+/** Доходы или расходы месяца одним блоком: заголовок, кольцо и легенда. */
+function FlowSection({
+  title,
+  rows,
+  empty,
+}: {
+  title: string
+  rows: CategoryTotal[]
+  empty: string
+}) {
+  return (
+    <>
+      <h3 className="mb-2 px-1 text-[15px] font-semibold">{title}</h3>
+
+      {rows.length === 0 ? (
+        <p className="rounded-2xl bg-surface px-5 py-6 text-center text-[14px] text-muted">
+          {empty}
+        </p>
+      ) : (
+        <section className="rounded-2xl bg-surface px-4 py-5">
+          <DonutChart rows={rows} label={title} />
+        </section>
+      )}
+    </>
   )
 }
 

@@ -4,6 +4,8 @@ import { formatMoney } from '../lib/money'
 
 interface DonutChartProps {
   rows: CategoryTotal[]
+  /** Что за сумма стоит в центре, пока сегмент не выбран. */
+  label?: string
 }
 
 const SIZE = 156
@@ -13,7 +15,7 @@ const CIRCUMFERENCE = 2 * Math.PI * RADIUS
 /** Зазор между сегментами в пикселях дуги — чтобы соседние цвета не сливались. */
 const GAP = 3
 
-export function DonutChart({ rows }: DonutChartProps) {
+export function DonutChart({ rows, label = 'Расходы' }: DonutChartProps) {
   // Выделенный сегмент показывается в центре; по умолчанию — общая сумма.
   const [selected, setSelected] = useState<number | null>(null)
 
@@ -58,7 +60,7 @@ export function DonutChart({ rows }: DonutChartProps) {
             {formatMoney(active ? active.amount : total)}
           </span>
           <span className="mt-0.5 line-clamp-2 text-[12px] leading-tight text-muted">
-            {active ? active.category.title : 'Расходы'}
+            {active ? active.category.title : label}
           </span>
         </div>
       </div>

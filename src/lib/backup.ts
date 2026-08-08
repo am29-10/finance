@@ -1,5 +1,6 @@
 import { defaultCategories } from '../data/categories'
 import { defaultAccount } from '../data/accounts'
+import { migrate } from '../data/storage'
 import {
   DEFAULT_SETTINGS,
   SCHEMA_VERSION,
@@ -8,6 +9,7 @@ import {
   type Account,
   type Loan,
   type Operation,
+  type Recurrence,
 } from '../data/types'
 import { download } from './csv'
 import { toDateKey } from './date'
@@ -140,28 +142,40 @@ function normalize(input: unknown): FinanceData {
     ? (raw.categories.filter(isCategory) as Category[])
     : defaultCategories()
 
+  const operations = raw.operations.filter(isOperation)
+
   /**
    * Копии, снятые до появления счетов, поля accounts не имеют. Заводим счёт
    * по умолчанию и переселяем на него всю историю: операция без счёта не
-   * попала бы ни в один остаток и молча исчезла бы из баланса.
+   * попала бы ни в один остаток и молча исчезла бы из баланса. Копию без
+   * операций подпирать нечем — там и счёта быть не должно.
    */
   const accounts = Array.isArray(raw.accounts) && raw.accounts.length
     ? (raw.accounts.filter(isAccount) as Account[])
-    : [defaultAccount()]
+    : operations.length > 0
+      ? [defaultAccount()]
+      : []
 
-  const fallback = accounts[0].id
+  const fallback = accounts[0]?.id
 
-  return {
+  // Через migrate: копия могла быть снята любой прежней версией, и приводить её
+  // к нынешней модели должен тот же код, что и данные из хранилища.
+  return migrate({
     version: SCHEMA_VERSION,
-    operations: raw.operations
-      .filter(isOperation)
-      .map((o) => (o.accountId && accounts.some((a) => a.id === o.accountId) ? o : { ...o, accountId: fallback })),
+    operations: operations.map((o) =>
+      (o.accountId && accounts.some((a) => a.id === o.accountId)) || !fallback
+        ? o
+        : { ...o, accountId: fallback },
+    ),
     categories,
     accounts,
     // Копии, снятые до появления кредитов, поля loans не имеют — это нормально.
     loans: Array.isArray(raw.loans) ? raw.loans.filter(isLoan) : [],
+    recurrences: Array.isArray(raw.recurrences)
+      ? raw.recurrences.filter((rule) => isRecurrence(rule, accounts))
+      : [],
     settings: { ...DEFAULT_SETTINGS, ...raw.settings, rates: raw.settings?.rates ?? {} },
-  }
+  })
 }
 
 function isAccount(value: unknown): value is Account {
@@ -174,6 +188,29 @@ function isAccount(value: unknown): value is Account {
     typeof a.currency === 'string' &&
     typeof a.initialBalance === 'number' &&
     Number.isInteger(a.initialBalance)
+  )
+}
+
+/**
+ * Правило повтора принимаем только со счётом, который в этой же копии есть:
+ * иначе оно молча не сработает ни разу, а человек будет ждать свою аренду.
+ */
+function isRecurrence(value: unknown, accounts: Account[]): value is Recurrence {
+  if (typeof value !== 'object' || value === null) return false
+  const r = value as Partial<Recurrence>
+
+  return (
+    typeof r.id === 'string' &&
+    (r.type === 'income' || r.type === 'expense' || r.type === 'transfer') &&
+    typeof r.amount === 'number' &&
+    Number.isInteger(r.amount) &&
+    r.amount > 0 &&
+    typeof r.categoryId === 'string' &&
+    (r.period === 'week' || r.period === 'month' || r.period === 'year') &&
+    typeof r.startDate === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(r.startDate) &&
+    typeof r.accountId === 'string' &&
+    accounts.some((account) => account.id === r.accountId)
   )
 }
 

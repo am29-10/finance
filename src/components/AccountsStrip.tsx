@@ -23,6 +23,32 @@ export function AccountsStrip({ balances, missingRates, hidden, onOpen }: Accoun
   const money = (amount: number, currency: string) =>
     hidden ? '••• ' : formatMoney(amount, { currency })
 
+  /**
+   * Счетов нет — значит человек ещё не сказал, где лежат его деньги. Пустой
+   * список тут выглядел бы поломкой, поэтому вместо него приглашение завести
+   * первый счёт: без него баланс считать не из чего.
+   */
+  if (balances.length === 0) {
+    return (
+      <button
+        onClick={onOpen}
+        className="mt-3 flex w-full items-center gap-3 rounded-2xl bg-surface px-4 py-4 text-left transition-colors active:bg-bg"
+      >
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-brand/10">
+          <svg viewBox="0 0 24 24" className="size-5 text-brand" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round">
+            <path d="M12 6v12M6 12h12" />
+          </svg>
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-medium">Добавить счёт</span>
+          <span className="mt-0.5 block text-[13px] leading-snug text-muted">
+            Карта, наличные или вклад — с него и начнётся баланс
+          </span>
+        </span>
+      </button>
+    )
+  }
+
   return (
     <div className="mt-3">
       <button

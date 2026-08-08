@@ -45,6 +45,10 @@ jobs:
 
       - run: npm ci
 
+      # Тесты до сборки: ошибка в расчёте кредита или в миграции хранилища не
+      # мешает собраться, а деньги показывает неверно — и уезжает на сайт молча.
+      - run: npm test
+
       - run: npm run build
 
       - uses: actions/upload-pages-artifact@v3

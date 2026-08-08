@@ -8,6 +8,7 @@ import { AnalyticsScreen } from './screens/AnalyticsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { LoansScreen } from './screens/LoansScreen'
 import { AccountsScreen } from './screens/AccountsScreen'
+import { RecurringScreen } from './screens/RecurringScreen'
 import { BackupSheet } from './components/BackupSheet'
 import { actions, useFinance } from './data/store'
 import { isBackupDue } from './lib/backup'
@@ -36,21 +37,23 @@ export default function App() {
    */
   const [loansOpen, setLoansOpen] = useState(false)
   const [accountsOpen, setAccountsOpen] = useState(false)
+  const [recurringOpen, setRecurringOpen] = useState(false)
 
   useEffect(() => {
     localStorage.setItem(TAB_KEY, tab)
   }, [tab])
 
   /**
-   * Платежи по кредитам начисляются по календарю, а не по действиям человека.
-   * Приложение может провисеть открытым через полночь и через смену месяца,
-   * поэтому сверяем графики и при запуске, и при каждом возвращении на экран.
+   * Платежи по кредитам и повторяющиеся операции начисляются по календарю,
+   * а не по действиям человека. Приложение может провисеть открытым через
+   * полночь и через смену месяца, поэтому сверяемся и при запуске, и при
+   * каждом возвращении на экран.
    */
   useEffect(() => {
-    actions.syncLoans()
+    actions.sync()
 
     const onVisible = () => {
-      if (document.visibilityState === 'visible') actions.syncLoans()
+      if (document.visibilityState === 'visible') actions.sync()
     }
 
     document.addEventListener('visibilitychange', onVisible)
@@ -104,6 +107,16 @@ export default function App() {
     )
   }
 
+  if (recurringOpen) {
+    return (
+      <div className="mx-auto flex min-h-full max-w-lg flex-col">
+        <main className="flex-1 pb-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
+          <RecurringScreen onBack={() => setRecurringOpen(false)} />
+        </main>
+      </div>
+    )
+  }
+
   if (loansOpen) {
     return (
       <div className="mx-auto flex min-h-full max-w-lg flex-col">
@@ -127,7 +140,7 @@ export default function App() {
         )}
         {tab === 'operations' && <OperationsScreen onEdit={openSheet} />}
         {tab === 'analytics' && <AnalyticsScreen />}
-        {tab === 'profile' && <ProfileScreen />}
+        {tab === 'profile' && <ProfileScreen onOpenRecurring={() => setRecurringOpen(true)} />}
       </main>
 
       <TabBar active={tab} onChange={setTab} onAdd={() => openSheet()} />
@@ -138,6 +151,7 @@ export default function App() {
           open={sheetOpen}
           operation={sheet.operation}
           onClose={closeSheet}
+          onAddAccount={() => setAccountsOpen(true)}
         />
       )}
 

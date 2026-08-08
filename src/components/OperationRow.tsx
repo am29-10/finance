@@ -49,7 +49,24 @@ export function OperationRow({
       <CategoryIcon icon={icon} color={color} size={42} />
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-medium">{title}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-[15px] font-medium">{title}</span>
+          {/* Значок повтора объясняет строку, которую человек сам сегодня не вносил. */}
+          {operation.recurrenceId && (
+            <svg
+              viewBox="0 0 24 24"
+              className="size-3.5 shrink-0 text-muted"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2.2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-label="Повторяющаяся операция"
+            >
+              <path d="M4 9h11a4 4 0 0 1 0 8h-1M4 9l3-3M4 9l3 3" />
+            </svg>
+          )}
+        </span>
         <span className="mt-0.5 block truncate text-[13px] text-muted">{subtitle}</span>
       </span>
 

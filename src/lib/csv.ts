@@ -1,5 +1,5 @@
-import { categoryById } from '../data/store'
-import type { FinanceData } from '../data/types'
+import { accountById, categoryById } from '../data/store'
+import type { FinanceData, OperationType } from '../data/types'
 import { toDateKey } from './date'
 
 /**
@@ -8,18 +8,34 @@ import { toDateKey } from './date'
  * — суммы с запятой как десятичным разделителем;
  * — BOM в начале файла, иначе кириллица превращается в кракозябры.
  */
+const TYPE_TITLE: Record<OperationType, string> = {
+  income: 'Доход',
+  expense: 'Расход',
+  transfer: 'Перевод',
+}
+
 export function exportCsv(data: FinanceData) {
-  const header = ['Дата', 'Тип', 'Категория', 'Сумма', 'Комментарий']
+  const header = ['Дата', 'Тип', 'Категория', 'Сумма', 'Валюта', 'Счёт', 'Куда', 'Комментарий']
 
   const rows = [...data.operations]
     .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .map((operation) => [
-      operation.date,
-      operation.type === 'income' ? 'Доход' : 'Расход',
-      categoryById(data, operation.categoryId)?.title ?? '',
-      (operation.amount / 100).toFixed(2).replace('.', ','),
-      operation.note ?? '',
-    ])
+    .map((operation) => {
+      const account = accountById(data, operation.accountId)
+
+      return [
+        operation.date,
+        TYPE_TITLE[operation.type],
+        // У перевода категории нет — в таблице она сбивала бы с толку.
+        operation.type === 'transfer'
+          ? ''
+          : (categoryById(data, operation.categoryId)?.title ?? ''),
+        (operation.amount / 100).toFixed(2).replace('.', ','),
+        account?.currency ?? '',
+        account?.title ?? '',
+        operation.toAccountId ? (accountById(data, operation.toAccountId)?.title ?? '') : '',
+        operation.note ?? '',
+      ]
+    })
 
   const csv = [header, ...rows].map((row) => row.map(escape).join(';')).join('\r\n')
 

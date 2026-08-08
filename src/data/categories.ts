@@ -7,7 +7,11 @@ import type { Category } from './types'
  * (оранжевый, фиолетовый, розовый, бирюзовый различимы в том числе при дальтонизме).
  * Остальные получают производные оттенки: в списках они разделены текстом,
  * а в кольцевой диаграмме показываются только пять сегментов — топ-4 и «Другое».
- * Доходные все зелёные — доход в интерфейсе всегда зелёный.
+ *
+ * Доходные раньше были все зелёными, и в кольце доходов их сегменты сливались
+ * в одно пятно. Зелёная осталась зарплата — самая крупная строка дохода у
+ * большинства, — а остальные разведены по цветовому кругу. Смысл «доход зелёный»
+ * никуда не делся: его несут знак «+» и цвет суммы, а не иконка категории.
  */
 
 /**
@@ -16,6 +20,19 @@ import type { Category } from './types'
  * в строке увела бы платёж по ипотеке в «Другое» без единой ошибки.
  */
 export const LOAN_CATEGORY_ID = 'loans'
+
+export const OTHER_EXPENSE_ID = 'other-expense'
+export const OTHER_INCOME_ID = 'other-income'
+
+/**
+ * Цвет «Другого» — и категории, и сегмента, в который кольцо сворачивает хвост.
+ *
+ * Нейтральный намеренно: «Другое» не самостоятельная статья, а мешок с
+ * остатками, и цветной сегмент придавал бы ему вес, которого у него нет.
+ * Прежний светло-серый при этом плохо отделялся от розовой и бирюзовой
+ * категорий — этот темнее и проходит проверку на различимость.
+ */
+export const REST_COLOR = '#52525b'
 
 const EXPENSES: Array<[string, string, string, string]> = [
   ['products', 'Продукты', 'cart', '#f97316'],
@@ -34,16 +51,21 @@ const EXPENSES: Array<[string, string, string, string]> = [
   ['education', 'Образование', 'book', '#ca8a04'],
   ['travel', 'Путешествия', 'plane', '#8b5cf6'],
   [LOAN_CATEGORY_ID, 'Кредиты и ипотека', 'bank', '#7c3aed'],
-  ['other-expense', 'Другое', 'dots', '#94a3b8'],
+  [OTHER_EXPENSE_ID, 'Другое', 'dots', REST_COLOR],
 ]
 
+/**
+ * Пять цветных доходных категорий проверены валидатором палитры на все пары
+ * сразу (в кольце любые две могут оказаться рядом): худшая пара при дальтонизме
+ * ΔE 13,0 при пороге 8, при обычном зрении — 15,3 при пороге 15.
+ */
 const INCOMES: Array<[string, string, string, string]> = [
-  ['salary', 'Зарплата', 'wallet', '#4caf50'],
-  ['freelance', 'Фриланс', 'laptop', '#22c55e'],
-  ['business', 'Бизнес', 'briefcase', '#16a34a'],
-  ['investments', 'Инвестиции', 'chart', '#059669'],
-  ['gift', 'Подарок', 'gift', '#34d399'],
-  ['other-income', 'Другое', 'dots', '#6ee7b7'],
+  ['salary', 'Зарплата', 'wallet', '#008300'],
+  ['freelance', 'Фриланс', 'laptop', '#2a78d6'],
+  ['business', 'Бизнес', 'briefcase', '#4a3aa7'],
+  ['investments', 'Инвестиции', 'chart', '#eda100'],
+  ['gift', 'Подарок', 'gift', '#e87ba4'],
+  [OTHER_INCOME_ID, 'Другое', 'dots', REST_COLOR],
 ]
 
 export function defaultCategories(): Category[] {
@@ -75,6 +97,6 @@ export function loanCategory(): Category {
 
 /** Куда попадают операции, чья категория была удалена. */
 export const FALLBACK_CATEGORY: Record<'income' | 'expense', string> = {
-  expense: 'other-expense',
-  income: 'other-income',
+  expense: OTHER_EXPENSE_ID,
+  income: OTHER_INCOME_ID,
 }

@@ -3,7 +3,7 @@ import { BudgetSheet } from '../components/BudgetSheet'
 import { InstallSheet } from '../components/InstallSheet'
 import { RatesSheet } from '../components/RatesSheet'
 import { PinSheet } from '../components/PinSheet'
-import { actions, activeAccounts, useFinance } from '../data/store'
+import { actions, activeAccounts, activeRecurrences, useFinance } from '../data/store'
 import type { FinanceData } from '../data/types'
 import { canShareBackup, exportBackup, isBackupDue, readBackup, shareBackup } from '../lib/backup'
 import { exportCsv } from '../lib/csv'
@@ -12,7 +12,11 @@ import { plural } from '../lib/text'
 import { isNativeApp, isStandalone, storageRisk } from '../lib/platform'
 import { BASE_CURRENCY } from '../lib/currency'
 
-export function ProfileScreen() {
+interface ProfileScreenProps {
+  onOpenRecurring: () => void
+}
+
+export function ProfileScreen({ onOpenRecurring }: ProfileScreenProps) {
   const data = useFinance()
   const fileInput = useRef<HTMLInputElement>(null)
 
@@ -32,6 +36,11 @@ export function ProfileScreen() {
   ].filter((code) => code !== BASE_CURRENCY)
 
   const loanCount = data.loans.length
+
+  const recurring = {
+    total: data.recurrences.length,
+    active: activeRecurrences(data).length,
+  }
 
   function confirmClear(kind: 'operations' | 'all') {
     if (clearing !== kind) {
@@ -111,16 +120,15 @@ export function ProfileScreen() {
       </header>
 
       <Group title="Общее">
-        <div className="flex items-center justify-between gap-4 px-4 py-3">
-          <span className="text-[16px]">Имя</span>
-          <input
-            value={data.settings.name}
-            onChange={(e) => actions.updateSettings({ name: e.target.value })}
-            placeholder="Как к вам обращаться"
-            maxLength={24}
-            className="min-w-0 flex-1 bg-transparent text-right text-[16px] outline-none placeholder:text-muted"
-          />
-        </div>
+        <ActionRow
+          label="Повторяющиеся операции"
+          hint={
+            recurring.total > 0
+              ? `${recurring.active} ${plural(recurring.active, 'активный', 'активных', 'активных')} из ${recurring.total}`
+              : 'Подписки, аренда, зарплата — заводятся сами'
+          }
+          onClick={onOpenRecurring}
+        />
         <ActionRow
           label="Бюджет на месяц"
           value={
