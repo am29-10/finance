@@ -38,6 +38,10 @@ export default defineConfig(({ mode }) => {
     !isApp &&
     VitePWA({
       registerType: 'autoUpdate',
+      // Регистрируем service worker сами (src/lib/updates.ts): встроенный скрипт
+      // не перезагружает экран, когда приехала новая версия, и человек продолжает
+      // видеть старую, пока не закроет приложение и не откроет заново.
+      injectRegister: null,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Кошелёк — учёт финансов',
