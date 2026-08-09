@@ -14,9 +14,128 @@
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <title>Кошелёк</title>
+
+    <!--
+      Первый кадр приложения.
+
+      Между запуском с иконки и появлением интерфейса лежит загрузка скриптов,
+      и всё это время экран оставался белым — приложение выглядело сломанным
+      ровно в тот момент, когда его открывают. Разметка лежит прямо в HTML, а
+      стили — здесь же, а не в общем файле: внешний CSS к этой секунде ещё не
+      загружен, и ссылаться на него значило бы снова показать белизну.
+
+      Убирать заставку не нужно: React очищает контейнер, когда монтируется, —
+      она исчезает вместе с первым настоящим кадром.
+    -->
+    <style>
+      :root {
+        color-scheme: light;
+      }
+
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #f5f7fa;
+      }
+
+      .boot {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 24px;
+        /* Задержка перед появлением: при быстром старте заставка не мигнёт. */
+        animation: boot-in 0.25s 0.15s ease both;
+      }
+
+      .boot-bar {
+        width: 132px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 3px;
+        background: #e2e7ec;
+      }
+
+      .boot-bar span {
+        display: block;
+        width: 40%;
+        height: 100%;
+        border-radius: 3px;
+        background: #2e7d6b;
+        animation: boot-slide 1.1s ease-in-out infinite;
+      }
+
+      /*
+        Загрузка без конца — это не загрузка, а обрыв. Через восемь секунд
+        ожидание перестаёт быть правдоподобным, и вместо него нужен ответ,
+        что делать: чаще всего дело в пропавшей сети.
+      */
+      .boot-hint {
+        max-width: 264px;
+        margin: 0;
+        text-align: center;
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        color: #8b939d;
+        animation: boot-in 0.3s 8s ease both;
+      }
+
+      @keyframes boot-in {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes boot-slide {
+        from {
+          transform: translateX(-100%);
+        }
+        to {
+          transform: translateX(330%);
+        }
+      }
+
+      /* Бегущая полоска — украшение; тем, кому движение мешает, она не нужна. */
+      @media (prefers-reduced-motion: reduce) {
+        .boot,
+        .boot-hint {
+          animation-delay: 0s;
+          animation-duration: 0s;
+        }
+
+        .boot-bar span {
+          width: 100%;
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status" aria-label="Загрузка">
+        <svg width="88" height="88" viewBox="0 0 512 512" aria-hidden="true">
+          <rect width="512" height="512" rx="116" fill="#2e7d6b" />
+          <g stroke="#ffffff" stroke-width="34" stroke-linecap="round" fill="none">
+            <path d="M176 330V268" />
+            <path d="M256 330V212" />
+            <path d="M336 330V160" />
+            <path d="M140 356h232" />
+          </g>
+        </svg>
+
+        <div class="boot-bar"><span></span></div>
+
+        <p class="boot-hint">Не удаётся загрузить. Проверьте подключение к интернету.</p>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
