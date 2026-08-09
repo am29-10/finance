@@ -50,9 +50,14 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
 
   const accounts = activeAccounts(data)
 
-  const [accountId, setAccountId] = useState(
-    () => operation?.accountId ?? accounts[0]?.id ?? '',
-  )
+  /**
+   * Пустая строка — «общая» операция, без счёта.
+   *
+   * По умолчанию новый расход не привязан ни к чему: разносить каждую покупку
+   * по картам мало кто готов, а остатки счетов человек и так ведёт руками. Кому
+   * привязка нужна, тот выберет счёт сам — и увидит его в остатке.
+   */
+  const [accountId, setAccountId] = useState(() => operation?.accountId ?? '')
   const [toAccountId, setToAccountId] = useState(
     () => operation?.toAccountId ?? accounts[1]?.id ?? '',
   )
@@ -102,11 +107,27 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
       Boolean(fromAccount && toAccount) &&
       accountId !== toAccountId &&
       (!crossCurrency || parsedToAmount !== null)
-    : parsed !== null && Boolean(fromAccount) && categories.some((c) => c.id === categoryId)
+    : // Доходу и расходу счёт не обязателен: общая трата ни к какой карте не привязана.
+      parsed !== null && categories.some((c) => c.id === categoryId)
 
   function changeType(next: OperationType) {
     setType(next)
-    if (next === 'transfer') return
+
+    /**
+     * Перевод — единственный тип, которому счета обязательны с обоих концов:
+     * без них непонятно, откуда и куда переехали деньги. Поэтому при переходе
+     * на него подставляем недостающие и разводим совпавшие: форма, которая
+     * открывается заведомо несохраняемой, выглядит поломкой.
+     */
+    if (next === 'transfer') {
+      const from = accountId || accounts[0]?.id || ''
+      if (from !== accountId) setAccountId(from)
+
+      if (!toAccountId || toAccountId === from) {
+        setToAccountId(accounts.find((a) => a.id !== from)?.id ?? '')
+      }
+      return
+    }
 
     // Категории у доходов и расходов разные — переносим выбор на первую подходящую.
     const first = categoriesOf(data, next)[0]
@@ -163,7 +184,9 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
       categoryId,
       date,
       note: note.trim() || undefined,
-      accountId,
+      // Пустой выбор — это «без счёта», и в модели он именно отсутствие поля,
+      // а не пустая строка: иначе операция ссылалась бы на несуществующий счёт.
+      accountId: accountId || undefined,
       // Операция могла быть переводом до правки — снимаем следы второго счёта.
       toAccountId: undefined,
       toAmount: undefined,
@@ -241,35 +264,6 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
             className="mt-1 w-full rounded-2xl bg-brand py-4 text-[17px] font-semibold text-white transition-all duration-200 active:scale-[0.98]"
           >
             Понятно
-          </button>
-        </div>
-      </Sheet>
-    )
-  }
-
-  /**
-   * Операции живут на счетах: без счёта у суммы нет ни остатка, ни места, откуда
-   * она ушла. Поэтому вместо формы, которая всё равно не сохранится, отправляем
-   * заводить первый счёт.
-   */
-  if (accounts.length === 0) {
-    return (
-      <Sheet open={open} onClose={onClose} title="Сначала счёт">
-        <div className="flex flex-col gap-4">
-          <p className="px-1 text-[14px] leading-snug text-muted">
-            Операцию нужно куда-то записать: карта, наличные, вклад. Заведите счёт — на нём
-            появится остаток, и с него начнётся баланс. Счетов может быть сколько угодно, а
-            переброска денег между ними заводится переводом и не портит статистику трат.
-          </p>
-
-          <button
-            onClick={() => {
-              onClose()
-              onAddAccount?.()
-            }}
-            className="w-full rounded-2xl bg-brand py-4 text-[17px] font-semibold text-white transition-all duration-200 active:scale-[0.98]"
-          >
-            Добавить счёт
           </button>
         </div>
       </Sheet>
@@ -359,16 +353,43 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
           </>
         ) : (
           <>
-            {accounts.length > 1 && (
-              <Field label="Счёт">
+            {accounts.length === 0 ? (
+              /*
+                Счетов нет — операцию это больше не блокирует: расходы можно
+                вести и без них. Но предложить завести стоит, иначе экран
+                «Всего денег» так и останется нулём без объяснения почему.
+              */
+              <button
+                onClick={() => {
+                  onClose()
+                  onAddAccount?.()
+                }}
+                className="rounded-2xl bg-surface px-4 py-3.5 text-left text-[13px] leading-relaxed text-muted transition-colors active:bg-bg"
+              >
+                Операция сохранится и без счёта — она попадёт в историю и в аналитику. Чтобы
+                видеть ещё и остатки, <span className="font-semibold text-brand">заведите счёт</span>:
+                карту, наличные или вклад.
+              </button>
+            ) : (
+              <Field
+                label="Счёт"
+                hint={
+                  accountId
+                    ? 'Остаток этого счёта изменится на сумму операции.'
+                    : 'Без счёта операция попадёт в историю и в аналитику, но ничей остаток не тронет — так удобно вести общие траты, которые вы не разносите по картам.'
+                }
+                optional
+              >
                 <AccountPicker
                   accounts={accounts}
                   data={data}
                   selected={accountId}
                   onSelect={setAccountId}
+                  allowNone
                 />
               </Field>
             )}
+
 
         <Field label="Категория">
           <div className="grid grid-cols-4 gap-x-2 gap-y-4 rounded-2xl bg-surface px-3 py-4">
@@ -562,11 +583,14 @@ function AccountPicker({
   data,
   selected,
   onSelect,
+  allowNone,
 }: {
   accounts: Account[]
   data: FinanceData
   selected: string
   onSelect: (id: string) => void
+  /** Показать вариант «Без счёта» — для доходов и расходов, но не для переводов. */
+  allowNone?: boolean
 }) {
   if (accounts.length === 0) {
     return (
@@ -578,6 +602,24 @@ function AccountPicker({
 
   return (
     <div className="flex flex-col gap-2">
+      {allowNone && (
+        <button
+          onClick={() => onSelect('')}
+          className="flex items-center gap-3 rounded-2xl px-4 py-3 text-left transition-all duration-200"
+          style={{
+            backgroundColor: 'var(--color-surface)',
+            boxShadow: selected === '' ? '0 0 0 2px var(--color-muted)' : 'none',
+          }}
+        >
+          <CategoryIcon icon="dots" color="#94a3b8" size={36} />
+
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium">Без счёта</span>
+            <span className="mt-0.5 block text-[12px] text-muted">Общая трата, остатки не трогает</span>
+          </span>
+        </button>
+      )}
+
       {accounts.map((account) => {
         const active = account.id === selected
 

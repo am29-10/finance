@@ -65,3 +65,41 @@ export function formatAmountInput(raw: string): string {
 export function toAmountInput(minor: number): string {
   return formatAmountInput(String(Math.round(minor / 100)))
 }
+
+/* ── Остаток на счёте ──────────────────────────────────────────────────── */
+
+/**
+ * Остаток разбирается не так, как сумма операции: он бывает нулевым и
+ * отрицательным.
+ *
+ * Ноль — это «на карте пусто», а не «человек ничего не ввёл», и отвергать его
+ * значило бы не давать обнулить счёт. Минус — это карта, ушедшая в овердрафт:
+ * запретив его, мы заставили бы показывать чужое число вместо своего.
+ *
+ * Возвращает null, если ввод вообще не похож на число.
+ */
+export function parseBalance(input: string): number | null {
+  const cleaned = input.replace(/\s| /g, '').replace(/^[−–—-]/, '-')
+  if (!/^-?\d+$/.test(cleaned)) return null
+
+  const value = Number(cleaned)
+  if (!Number.isFinite(value)) return null
+
+  return value * 100
+}
+
+/**
+ * Ввод остатка с разрядами и сохранением минуса: «-12500» → «−12 500».
+ * Одинокий минус оставляем как есть — человек ещё набирает число.
+ */
+export function formatBalanceInput(raw: string): string {
+  const negative = /^\s*[−–—-]/.test(raw)
+  const grouped = formatAmountInput(raw)
+
+  return negative ? `−${grouped}` : grouped
+}
+
+/** Остаток из хранилища в поле ввода: −125000 → «−1 250». */
+export function toBalanceInput(minor: number): string {
+  return formatBalanceInput(String(Math.round(minor / 100)))
+}

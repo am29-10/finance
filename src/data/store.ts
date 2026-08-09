@@ -16,7 +16,7 @@ import type {
 import { duePayments } from '../lib/loan'
 import { todayKey } from '../lib/date'
 import { occurrencesBetween } from '../lib/recurrence'
-import { toBase } from '../lib/currency'
+import { BASE_CURRENCY, toBase } from '../lib/currency'
 
 let adapter: StorageAdapter = localStorageAdapter
 let state: FinanceData = applyRecurrences(reconcileLoans(adapter.load() ?? initial()))
@@ -189,8 +189,11 @@ export function applyRecurrences(data: FinanceData, today: DateKey = todayKey())
     if (rule.pausedAt) return rule
 
     // Счёт могли удалить или заархивировать — списывать стало неоткуда.
-    const account = accountById(data, rule.accountId)
-    if (!account || account.archivedAt) return rule
+    // Правило без счёта живёт дальше: общей трате счёт и не был нужен.
+    if (rule.accountId) {
+      const account = accountById(data, rule.accountId)
+      if (!account || account.archivedAt) return rule
+    }
 
     const dates = occurrencesBetween(rule, today, rule.lastRunAt)
     if (dates.length === 0) {
@@ -402,6 +405,29 @@ export const actions = {
   },
 
   /**
+   * Сделать остаток на счёте равным указанному.
+   *
+   * Остаток нигде не хранится — он считается как точка отсчёта плюс операции
+   * счёта, — поэтому «поправить остаток» означает сдвинуть точку отсчёта на
+   * разницу. Ни одной новой записи в истории при этом не появляется: выдуманный
+   * доход на недостающую тысячу навсегда испортил бы аналитику месяца, а
+   * выдуманный расход — структуру трат.
+   *
+   * Разницу считаем от текущего состояния, а не от начального остатка: между
+   * двумя правками могли добавиться операции, и вычитать надо ровно то, что
+   * человек сейчас видит на экране.
+   */
+  setAccountBalance(id: string, amount: number) {
+    const account = accountById(state, id)
+    if (!account) return
+
+    const delta = amount - accountBalance(state, id)
+    if (delta === 0) return
+
+    actions.updateAccount(id, { initialBalance: account.initialBalance + delta })
+  },
+
+  /**
    * Убрать счёт из обихода, сохранив историю.
    *
    * Полное удаление осиротило бы операции: они ссылаются на счёт, и без него
@@ -489,12 +515,15 @@ export function closedLoans(data: FinanceData): Loan[] {
   return data.loans.filter((loan) => loan.closedAt)
 }
 
+/** Порядок «свежее сверху»: по дате, внутри дня — по времени добавления. */
+export function byRecency(a: Operation, b: Operation): number {
+  if (a.date !== b.date) return a.date < b.date ? 1 : -1
+  return a.createdAt < b.createdAt ? 1 : -1
+}
+
 /** Операции по убыванию даты, внутри дня — последние добавленные сверху. */
 export function sortedOperations(data: FinanceData): Operation[] {
-  return [...data.operations].sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? 1 : -1
-    return a.createdAt < b.createdAt ? 1 : -1
-  })
+  return [...data.operations].sort(byRecency)
 }
 
 export function operationsBetween(data: FinanceData, from: DateKey, to: DateKey): Operation[] {
@@ -523,7 +552,9 @@ export function groupSimilar(data: FinanceData, operations: Operation[]): Operat
   const groups = new Map<string, OperationGroup>()
 
   for (const operation of operations) {
-    const currency = accountById(data, operation.accountId)?.currency ?? ''
+    // У операции без счёта валюта та же, в которой её показывает список, —
+    // иначе одинаковые с виду строки разъехались бы по разным группам.
+    const currency = accountById(data, operation.accountId)?.currency ?? BASE_CURRENCY
 
     const key =
       operation.type === 'transfer'
@@ -536,6 +567,44 @@ export function groupSimilar(data: FinanceData, operations: Operation[]): Operat
   }
 
   return [...groups.values()]
+}
+
+export interface FlowGroup extends OperationGroup {
+  /** Сумма группы в валюте её операций. */
+  total: number
+  /** Она же в рублях; null — курс не задан. */
+  inBase: number | null
+}
+
+/**
+ * Доходы или расходы периода, схлопнутые в группы и выстроенные по убыванию суммы.
+ *
+ * Лента «последних операций» отвечала на вопрос «что я делал вчера», а спрашивают
+ * обычно другое: на что уходит больше всего. Поэтому здесь не хронология, а
+ * рейтинг: сверху то, что стоило дороже всего, и уже внутри группы — из чего оно
+ * сложилось. Порядок операций внутри остаётся хронологическим — развернув
+ * «Продукты», человек ждёт увидеть последнюю покупку первой.
+ *
+ * Валюты не смешиваются: `groupSimilar` разводит их по разным группам, а
+ * сравниваем группы по рублёвому эквиваленту. Там, где курса нет, в сравнение
+ * идёт сумма как есть — место в списке будет условным, но группа не потеряется.
+ */
+export function flowGroups(
+  data: FinanceData,
+  operations: Operation[],
+  type: FlowType,
+): FlowGroup[] {
+  const flow = operations.filter((operation) => operation.type === type).sort(byRecency)
+
+  return groupSimilar(data, flow)
+    .map((group) => {
+      const total = group.operations.reduce((sum, operation) => sum + operation.amount, 0)
+      const currency =
+        accountById(data, group.operations[0].accountId)?.currency ?? BASE_CURRENCY
+
+      return { ...group, total, inBase: toBase(total, currency, data.settings.rates) }
+    })
+    .sort((a, b) => (b.inBase ?? b.total) - (a.inBase ?? a.total))
 }
 
 export interface Totals {
@@ -563,7 +632,9 @@ export function totalsOf(operations: Operation[]): Totals {
 
 /* ── Счета и остатки ───────────────────────────────────────────────────── */
 
-export function accountById(data: FinanceData, id: string): Account | undefined {
+/** Принимает и пустой идентификатор: у операции счёта может не быть вовсе. */
+export function accountById(data: FinanceData, id: string | undefined): Account | undefined {
+  if (!id) return undefined
   return data.accounts.find((account) => account.id === id)
 }
 
@@ -586,7 +657,9 @@ export function accountBalance(data: FinanceData, accountId: string): number {
   let balance = account?.initialBalance ?? 0
 
   for (const operation of data.operations) {
-    if (operation.accountId === accountId) {
+    // Операции без счёта в остаток не попадают ни к кому: это общие траты,
+    // которые человек намеренно не разносил по картам.
+    if (operation.accountId && operation.accountId === accountId) {
       if (operation.type === 'income') balance += operation.amount
       else balance -= operation.amount
     } else if (operation.toAccountId === accountId) {

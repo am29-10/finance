@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { formatAmountInput, formatCompact, formatMoney, parseAmount, toAmountInput } from './money'
+import {
+  formatAmountInput,
+  formatBalanceInput,
+  formatCompact,
+  formatMoney,
+  parseAmount,
+  parseBalance,
+  toAmountInput,
+  toBalanceInput,
+} from './money'
 
 /** Intl ставит неразрывный пробел — сравнивать удобнее по обычному. */
 const plain = (value: string) => value.replace(/ | /g, ' ')
@@ -68,5 +77,51 @@ describe('toAmountInput', () => {
 
   it('округляет копейки, а не умножает сумму в сто раз', () => {
     expect(toAmountInput(14_999)).toBe('150')
+  })
+})
+
+describe('parseBalance', () => {
+  it('принимает ноль — это «на карте пусто», а не пустой ввод', () => {
+    expect(parseBalance('0')).toBe(0)
+  })
+
+  it('принимает минус: карта уходит в овердрафт', () => {
+    expect(parseBalance('-1250')).toBe(-125_000)
+    expect(parseBalance('−1 250')).toBe(-125_000)
+  })
+
+  it('не спотыкается о разделители разрядов', () => {
+    expect(parseBalance('1 250 000')).toBe(125_000_000)
+  })
+
+  it('отвергает всё, что не число', () => {
+    expect(parseBalance('')).toBeNull()
+    expect(parseBalance('−')).toBeNull()
+    expect(parseBalance('12,5')).toBeNull()
+    expect(parseBalance('нисколько')).toBeNull()
+  })
+})
+
+describe('formatBalanceInput', () => {
+  it('сохраняет минус и расставляет разряды', () => {
+    expect(formatBalanceInput('-1250')).toBe('−1 250')
+  })
+
+  it('оставляет одинокий минус: человек ещё набирает число', () => {
+    expect(formatBalanceInput('-')).toBe('−')
+  })
+
+  it('без минуса ведёт себя как обычное поле суммы', () => {
+    expect(formatBalanceInput('1250')).toBe('1 250')
+  })
+})
+
+describe('toBalanceInput', () => {
+  it('кладёт в поле отрицательный остаток так, как его потом и разберут', () => {
+    expect(parseBalance(toBalanceInput(-125_000))).toBe(-125_000)
+  })
+
+  it('нулевой остаток показывает нулём, а не пустотой', () => {
+    expect(toBalanceInput(0)).toBe('0')
   })
 })

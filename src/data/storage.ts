@@ -1,4 +1,4 @@
-import { defaultCategories, LOAN_CATEGORY_ID, loanCategory } from './categories'
+import { defaultCategories } from './categories'
 import { DEFAULT_ACCOUNT_ID, defaultAccount } from './accounts'
 import type { Account, Category, FinanceData, Operation } from './types'
 import { DEFAULT_SETTINGS, SCHEMA_VERSION } from './types'
@@ -40,13 +40,21 @@ export function migrate(data: FinanceData): FinanceData {
   const operations = data.operations ?? []
 
   /**
-   * v2 → v3: появились счета. У операций из старых баз счёта нет, и без него
-   * они выпали бы из любого остатка — переселяем всю историю на первый счёт,
-   * создав его, если счетов ещё не было.
+   * База старее счетов — её узнаём по отсутствию самого поля, а не по пустому
+   * списку. С v5 операция без счёта законна: это общая трата, которую человек
+   * намеренно не разнёс по картам. Пустой список счетов такую операцию не
+   * выдаёт, а вот отсутствие поля выдаёт базу, писанную до v3.
+   */
+  const legacy = data.accounts === undefined
+
+  /**
+   * v2 → v3: появились счета. У операций из тех баз счёта нет не по выбору, а
+   * потому что его негде было указать, — заводим первый счёт и переселяем на
+   * него всю историю, иначе она выпала бы из любого остатка.
    */
   const accounts = data.accounts?.length
     ? data.accounts
-    : operations.length > 0
+    : legacy && operations.length > 0
       ? [defaultAccount()]
       : []
 
@@ -55,16 +63,20 @@ export function migrate(data: FinanceData): FinanceData {
   // Переселение считаем до чистки счетов: она смотрит, кто чем пользуется, и по
   // старым операциям — тем, у которых счёта ещё нет, — решила бы, что счётом не
   // пользуется никто, и снесла бы его вместе со всей их привязкой.
-  const settled = operations.map((operation) =>
-    operation.accountId || !fallback ? operation : { ...operation, accountId: fallback },
-  )
+  const settled =
+    legacy && fallback
+      ? operations.map((operation) =>
+          operation.accountId ? operation : { ...operation, accountId: fallback },
+        )
+      : operations
 
   return {
     version: SCHEMA_VERSION,
     operations: settled,
-    // v1 → v2: у старых баз нет категории кредитов, но операции по ним уже могут
-    // создаваться сразу после обновления — дозаводим её, не трогая остальные.
-    categories: withFreshColors(withLoanCategory(categories)),
+    // Встроенные категории появляются со временем — кредиты, аренда квартиры,
+    // — а копируются в базу только при первом запуске. Дозаводим недостающие,
+    // иначе новая категория дошла бы лишь до тех, кто ставит приложение с нуля.
+    categories: withFreshColors(withBuiltinCategories(categories)),
     accounts: withoutUnusedDefault(accounts, settled, data.loans ?? []),
     loans: data.loans ?? [],
     // v3 → v4: появились повторяющиеся операции; у старых баз правил нет.
@@ -113,9 +125,27 @@ function withoutUnusedDefault(
   )
 }
 
-function withLoanCategory(categories: Category[]): Category[] {
-  if (categories.some((c) => c.id === LOAN_CATEGORY_ID)) return categories
-  return [...categories, loanCategory()]
+/**
+ * Дозаводит встроенные категории, которых в базе ещё нет.
+ *
+ * Порядок сохраняем из кода, а не дописываем в хвост: в форме категории идут
+ * сеткой, и «Аренда квартиры», приехавшая обновлением, должна встать рядом с
+ * зарплатой, а не после «Другого». Свои категории человека остаются на местах.
+ */
+function withBuiltinCategories(categories: Category[]): Category[] {
+  const known = new Set(categories.map((c) => c.id))
+  const missing = defaultCategories().filter((c) => !known.has(c.id))
+  if (missing.length === 0) return categories
+
+  const order = defaultCategories().map((c) => c.id)
+  const rank = (id: string) => {
+    const index = order.indexOf(id)
+    return index === -1 ? order.length : index
+  }
+
+  // Своим категориям ранга нет — они идут в конце в прежнем порядке, поэтому
+  // сортировка устойчивая: у равных рангов сравнение возвращает ноль.
+  return [...categories, ...missing].sort((a, b) => rank(a.id) - rank(b.id))
 }
 
 /**

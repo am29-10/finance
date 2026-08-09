@@ -68,7 +68,8 @@ export function RecurrenceSheet({ open, rule, onClose }: RecurrenceSheetProps) {
             {note.trim() || category?.title || 'Повторяющаяся операция'}
           </p>
           <p className="mt-1 text-[13px] leading-snug text-muted">
-            {PERIOD_TITLES[period]} · {account?.title ?? 'счёт удалён'}
+            {PERIOD_TITLES[period]} ·{' '}
+            {rule.accountId ? (account?.title ?? 'счёт удалён') : 'без счёта'}
             {paused ? (
               <span style={{ color: 'var(--color-danger)' }}> · на паузе</span>
             ) : next ? (

@@ -154,6 +154,34 @@ describe('migrate: старые базы', () => {
     expect(data.categories.some((c) => c.id === LOAN_CATEGORY_ID)).toBe(true)
   })
 
+  it('дозаводит категории, появившиеся позже, — например аренду квартиры', () => {
+    const withoutRent = defaultCategories().filter((c) => c.id !== 'rent-income')
+    const data = migrate(stored({ categories: withoutRent }))
+
+    const rent = data.categories.find((c) => c.id === 'rent-income')
+
+    expect(rent?.type).toBe('income')
+    // Место в списке — из кода: новая категория встаёт рядом с зарплатой,
+    // а не в хвосте после «Другого».
+    expect(data.categories.indexOf(rent!)).toBeLessThan(
+      data.categories.findIndex((c) => c.id === 'other-income'),
+    )
+  })
+
+  it('не приписывает счёт общей трате', () => {
+    // Поле accounts у базы есть — значит про счета она знает, и операция без
+    // счёта в ней заведена намеренно. Приписать карту значило бы изменить
+    // остаток, которого человек не менял.
+    const data = migrate(
+      stored({
+        accounts: [account({ id: 'a2', title: 'Сбер' })],
+        operations: [operation({ accountId: undefined })],
+      }),
+    )
+
+    expect(data.operations[0].accountId).toBeUndefined()
+  })
+
   it('добавляет пустой список повторов', () => {
     const legacy = stored()
     delete (legacy as Partial<FinanceData>).recurrences

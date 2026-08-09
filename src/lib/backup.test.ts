@@ -78,12 +78,33 @@ describe('readBackup', () => {
     expect(data.accounts).toEqual([])
   })
 
-  it('чинит ссылку на счёт, которого в копии нет', async () => {
+  it('оставляет без счёта расход, чей счёт в копию не попал', async () => {
+    // Приписать чужую карту значило бы изменить остаток, которого никто не менял:
+    // операция остаётся в истории и в аналитике, но ничей баланс не двигает.
     const data = await readBackup(
       file({ operations: [operation({ accountId: 'потерянный' })], accounts: [account] }),
     )
 
+    expect(data.operations[0].accountId).toBeUndefined()
+  })
+
+  it('чинит потерянный счёт у перевода — без него от него нет смысла', async () => {
+    const data = await readBackup(
+      file({
+        operations: [operation({ type: 'transfer', accountId: 'потерянный', toAccountId: 'a1' })],
+        accounts: [account],
+      }),
+    )
+
     expect(data.operations[0].accountId).toBe('a1')
+  })
+
+  it('принимает операцию, заведённую без счёта намеренно', async () => {
+    const data = await readBackup(
+      file({ operations: [operation({ accountId: undefined })], accounts: [account] }),
+    )
+
+    expect(data.operations[0].accountId).toBeUndefined()
   })
 
   it('переносит правила повтора', async () => {

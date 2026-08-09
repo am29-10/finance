@@ -1,5 +1,6 @@
 import { accountById, categoryById } from '../data/store'
 import type { FinanceData, OperationType } from '../data/types'
+import { BASE_CURRENCY } from './currency'
 import { toDateKey } from './date'
 
 /**
@@ -30,8 +31,10 @@ export function exportCsv(data: FinanceData) {
           ? ''
           : (categoryById(data, operation.categoryId)?.title ?? ''),
         (operation.amount / 100).toFixed(2).replace('.', ','),
-        account?.currency ?? '',
-        account?.title ?? '',
+        account?.currency ?? BASE_CURRENCY,
+        // Пустая ячейка читалась бы как потерянные данные — у операции без
+        // счёта его нет намеренно, и в таблице это стоит назвать словом.
+        account?.title ?? 'Без счёта',
         operation.toAccountId ? (accountById(data, operation.toAccountId)?.title ?? '') : '',
         operation.note ?? '',
       ]

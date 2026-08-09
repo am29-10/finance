@@ -5,18 +5,20 @@ import { LoansCard } from '../components/LoansCard'
 import { AccountsStrip } from '../components/AccountsStrip'
 import { DonutChart } from '../components/DonutChart'
 import { OperationRow } from '../components/OperationRow'
+import { OperationGroupRow } from '../components/OperationGroupRow'
 import {
   accountBalances,
   accountById,
   categoryById,
   collapseToTop,
+  flowGroups,
   operationsBetween,
-  sortedOperations,
   totalBalance,
   totalsByCategory,
   totalsOf,
   useFinance,
   type CategoryTotal,
+  type FlowGroup,
 } from '../data/store'
 import type { Operation } from '../data/types'
 import {
@@ -31,7 +33,6 @@ import {
 } from '../lib/date'
 import { formatMoney } from '../lib/money'
 
-const RECENT_LIMIT = 5
 const HIDDEN_KEY = 'finance:hide-balance'
 
 interface HomeScreenProps {
@@ -58,7 +59,8 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
 
   const incomeRows = collapseToTop(totalsByCategory(data, monthOperations, 'income'))
   const expenseRows = collapseToTop(totalsByCategory(data, monthOperations, 'expense'))
-  const recent = sortedOperations(data).slice(0, RECENT_LIMIT)
+  const incomeGroups = flowGroups(data, monthOperations, 'income')
+  const expenseGroups = flowGroups(data, monthOperations, 'expense')
   const change = expenseChange(data, month)
   const monthLabel = formatMonthInline(month)
 
@@ -134,9 +136,23 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
       </div>
 
       {/* Сначала откуда деньги пришли, потом куда ушли — в том порядке, в котором они движутся. */}
-      <FlowSection title="Доходы" rows={incomeRows} empty="В этом месяце доходов пока нет" />
-      <div className="mt-4">
-        <FlowSection title="Расходы" rows={expenseRows} empty="В этом месяце расходов пока нет" />
+      <FlowSection
+        title="Доходы"
+        total={monthTotals.income}
+        rows={incomeRows}
+        groups={incomeGroups}
+        empty="В этом месяце доходов пока нет"
+        onEdit={onEdit}
+      />
+      <div className="mt-5">
+        <FlowSection
+          title="Расходы"
+          total={monthTotals.expense}
+          rows={expenseRows}
+          groups={expenseGroups}
+          empty="В этом месяце расходов пока нет"
+          onEdit={onEdit}
+        />
       </div>
 
       {change && (
@@ -171,33 +187,21 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
         </section>
       )}
 
-      <div className="mt-6 mb-2 flex items-baseline justify-between px-1">
-        <h2 className="text-[17px] font-semibold">Последние операции</h2>
-        {recent.length > 0 && (
-          <button onClick={onShowAll} className="text-[14px] font-medium text-brand">
-            Все
-          </button>
-        )}
-      </div>
-
-      {recent.length === 0 ? (
-        <p className="rounded-2xl bg-surface px-5 py-8 text-center text-[14px] text-muted">
+      {/*
+        Переводы в «Обзор» не попадают — они не доход и не расход, — а история
+        по дням осталась на своём экране. Отсюда до неё одна кнопка.
+      */}
+      {data.operations.length > 0 ? (
+        <button
+          onClick={onShowAll}
+          className="mt-5 w-full rounded-2xl bg-surface py-3.5 text-[15px] font-medium text-brand transition-transform active:scale-[0.99]"
+        >
+          Все операции по дням
+        </button>
+      ) : (
+        <p className="mt-5 rounded-2xl bg-surface px-5 py-8 text-center text-[14px] text-muted">
           Добавь первую операцию кнопкой «+»
         </p>
-      ) : (
-        <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">
-          {recent.map((operation) => (
-            <OperationRow
-              key={operation.id}
-              operation={operation}
-              category={categoryById(data, operation.categoryId)}
-              account={accountById(data, operation.accountId)}
-              toAccount={operation.toAccountId ? accountById(data, operation.toAccountId) : undefined}
-              meta={formatDayHeading(operation.date)}
-              onClick={() => onEdit(operation)}
-            />
-          ))}
-        </div>
       )}
 
       <BudgetSheet open={budgetOpen} onClose={() => setBudgetOpen(false)} />
@@ -205,28 +209,83 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
   )
 }
 
-/** Доходы или расходы месяца одним блоком: заголовок, кольцо и легенда. */
+/**
+ * Доходы или расходы месяца одним блоком: заголовок с итогом, кольцо долей и
+ * под ним сами операции — сгруппированные и по убыванию суммы.
+ *
+ * Кольцо и список отвечают на разные вопросы и потому стоят рядом: кольцо — на
+ * «во что это складывается», список — на «сколько именно и из чего». Поэтому в
+ * кольце только пять сегментов, а в списке все группы без исключения.
+ */
 function FlowSection({
   title,
+  total,
   rows,
+  groups,
   empty,
+  onEdit,
 }: {
   title: string
+  total: number
   rows: CategoryTotal[]
+  groups: FlowGroup[]
   empty: string
+  onEdit: (operation: Operation) => void
 }) {
+  const data = useFinance()
+
   return (
     <>
-      <h3 className="mb-2 px-1 text-[15px] font-semibold">{title}</h3>
+      <div className="mb-2 flex items-baseline justify-between px-1">
+        <h3 className="text-[15px] font-semibold">{title}</h3>
+        <span className="text-[14px] font-medium tabular-nums text-muted">
+          {formatMoney(total)}
+        </span>
+      </div>
 
       {rows.length === 0 ? (
         <p className="rounded-2xl bg-surface px-5 py-6 text-center text-[14px] text-muted">
           {empty}
         </p>
       ) : (
-        <section className="rounded-2xl bg-surface px-4 py-5">
-          <DonutChart rows={rows} label={title} />
-        </section>
+        <>
+          <section className="rounded-2xl bg-surface px-4 py-5">
+            <DonutChart rows={rows} label={title} />
+          </section>
+
+          <div className="mt-2.5 divide-y divide-line overflow-hidden rounded-2xl bg-surface">
+            {groups.map((group) => {
+              const first = group.operations[0]
+              const category = categoryById(data, first.categoryId)
+              const account = accountById(data, first.accountId)
+
+              // Группа из одной операции — не группа: разворачивать в ней нечего,
+              // а лишний шеврон обещал бы содержимое, которого нет.
+              if (group.operations.length === 1) {
+                return (
+                  <OperationRow
+                    key={first.id}
+                    operation={first}
+                    category={category}
+                    account={account}
+                    meta={formatDayHeading(first.date)}
+                    onClick={() => onEdit(first)}
+                  />
+                )
+              }
+
+              return (
+                <OperationGroupRow
+                  key={group.key}
+                  operations={group.operations}
+                  category={category}
+                  account={account}
+                  onSelect={onEdit}
+                />
+              )
+            })}
+          </div>
+        </>
       )}
     </>
   )

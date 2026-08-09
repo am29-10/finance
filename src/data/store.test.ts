@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  actions,
   applyRecurrences,
   accountBalance,
   collapseToTop,
+  flowGroups,
   groupSimilar,
   operationsBetween,
   sortedOperations,
@@ -11,6 +13,7 @@ import {
   totalsOf,
 } from './store'
 import { defaultCategories } from './categories'
+import { localStorageAdapter } from './storage'
 import type { Account, FinanceData, Operation, Recurrence } from './types'
 
 function account(patch: Partial<Account> = {}): Account {
@@ -94,6 +97,17 @@ describe('accountBalance', () => {
     expect(accountBalance(state, 'a2')).toBe(100_000)
   })
 
+  it('не трогает остаток операцией без счёта', () => {
+    // Общая трата живёт в истории и в аналитике, но ничей баланс не двигает:
+    // остатки счетов человек ведёт сам, и списать «с воздуха» нельзя.
+    const state = data({
+      accounts: [account({ initialBalance: 100_000 })],
+      operations: [operation({ amount: 30_000, accountId: undefined })],
+    })
+
+    expect(accountBalance(state, 'a1')).toBe(100_000)
+  })
+
   it('в обмене валюты кладёт на счёт полученную сумму, а не отданную', () => {
     const state = data({
       accounts: [
@@ -139,6 +153,61 @@ describe('totalBalance', () => {
 
   it('без счетов даёт ноль, а не ошибку', () => {
     expect(totalBalance(data({ accounts: [] })).amount).toBe(0)
+  })
+})
+
+describe('actions.setAccountBalance', () => {
+  /** Действия меняют модульное состояние, а наружу оно видно через хранилище. */
+  function afterAction(seed: FinanceData, run: () => void): FinanceData {
+    actions.replaceAll(seed)
+    run()
+    return localStorageAdapter.load()!
+  }
+
+  it('делает остаток ровно тем, который назвали', () => {
+    const next = afterAction(data({ accounts: [account({ initialBalance: 100_000 })] }), () =>
+      actions.setAccountBalance('a1', 250_000),
+    )
+
+    expect(accountBalance(next, 'a1')).toBe(250_000)
+  })
+
+  it('не заводит ни одной операции — аналитика остаётся чистой', () => {
+    const next = afterAction(data({ accounts: [account()] }), () =>
+      actions.setAccountBalance('a1', 250_000),
+    )
+
+    expect(next.operations).toEqual([])
+  })
+
+  it('оставляет историю на месте, сдвигая только точку отсчёта', () => {
+    const seed = data({
+      accounts: [account({ initialBalance: 100_000 })],
+      operations: [operation({ amount: 30_000 })],
+    })
+
+    // Видно 700 ₽, а банк показывает 900 ₽ — недостающие 200 ₽ уходят в отсчёт.
+    const next = afterAction(seed, () => actions.setAccountBalance('a1', 90_000))
+
+    expect(accountBalance(next, 'a1')).toBe(90_000)
+    expect(next.operations).toHaveLength(1)
+    expect(next.accounts[0].initialBalance).toBe(120_000)
+  })
+
+  it('принимает ноль и минус: счёт бывает пустым и уходит в овердрафт', () => {
+    const seed = data({ accounts: [account({ initialBalance: 100_000 })] })
+
+    expect(accountBalance(afterAction(seed, () => actions.setAccountBalance('a1', 0)), 'a1')).toBe(0)
+    expect(
+      accountBalance(afterAction(seed, () => actions.setAccountBalance('a1', -50_000)), 'a1'),
+    ).toBe(-50_000)
+  })
+
+  it('молчит про счёт, которого нет', () => {
+    const next = afterAction(data(), () => actions.setAccountBalance('нет такого', 250_000))
+
+    expect(next.accounts).toHaveLength(1)
+    expect(accountBalance(next, 'a1')).toBe(0)
   })
 })
 
@@ -234,6 +303,81 @@ describe('groupSimilar', () => {
 
     expect(groups.map((g) => g.operations[0].id)).toEqual(['a', 'b'])
     expect(groups[0].operations.map((o) => o.id)).toEqual(['a', 'c'])
+  })
+})
+
+describe('flowGroups', () => {
+  it('ставит наверх то, на что ушло больше всего', () => {
+    const groups = flowGroups(
+      data(),
+      [
+        operation({ categoryId: 'cafe', amount: 20_000 }),
+        operation({ categoryId: 'products', amount: 30_000 }),
+        operation({ categoryId: 'products', amount: 40_000 }),
+      ],
+      'expense',
+    )
+
+    expect(groups.map((g) => g.total)).toEqual([70_000, 20_000])
+    expect(groups[0].operations).toHaveLength(2)
+  })
+
+  it('не смешивает доходы с расходами', () => {
+    const groups = flowGroups(
+      data(),
+      [
+        operation({ type: 'income', categoryId: 'salary', amount: 300_000 }),
+        operation({ categoryId: 'products', amount: 40_000 }),
+      ],
+      'income',
+    )
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0].total).toBe(300_000)
+  })
+
+  it('оставляет переводы в стороне: они не доход и не расход', () => {
+    const state = data({ accounts: [account(), account({ id: 'a2' })] })
+    const groups = flowGroups(
+      state,
+      [operation({ type: 'transfer', amount: 500_000, toAccountId: 'a2' })],
+      'expense',
+    )
+
+    expect(groups).toEqual([])
+  })
+
+  it('внутри группы держит свежее сверху', () => {
+    const groups = flowGroups(
+      data(),
+      [
+        operation({ id: 'старая', date: '2026-02-01' }),
+        operation({ id: 'свежая', date: '2026-02-20' }),
+      ],
+      'expense',
+    )
+
+    expect(groups[0].operations.map((o) => o.id)).toEqual(['свежая', 'старая'])
+  })
+
+  it('сравнивает валютные группы по курсу, а не по числу', () => {
+    const state = data({
+      accounts: [account(), account({ id: 'a2', currency: 'USD' })],
+      settings: { monthlyBudget: 0, rates: { USD: 9500 } },
+    })
+
+    // 200 $ — это 19 000 ₽, то есть больше, чем 5 000 ₽, хотя число меньше.
+    const groups = flowGroups(
+      state,
+      [
+        operation({ categoryId: 'products', amount: 500_000 }),
+        operation({ categoryId: 'travel', amount: 20_000, accountId: 'a2' }),
+      ],
+      'expense',
+    )
+
+    expect(groups[0].operations[0].categoryId).toBe('travel')
+    expect(groups[0].inBase).toBe(1_900_000)
   })
 })
 

@@ -6,7 +6,7 @@ import { ACCOUNT_COLORS, ACCOUNT_KINDS, accountIcon } from '../data/accounts'
 import { accountBalance, actions, useFinance } from '../data/store'
 import type { Account, AccountKind } from '../data/types'
 import { BASE_CURRENCY, CURRENCIES, currencySymbol } from '../lib/currency'
-import { formatAmountInput, formatMoney, parseAmount, toAmountInput } from '../lib/money'
+import { formatBalanceInput, formatMoney, parseBalance, toBalanceInput } from '../lib/money'
 
 interface AccountSheetProps {
   open: boolean
@@ -23,13 +23,24 @@ export function AccountSheet({ open, account, onClose }: AccountSheetProps) {
   const [kind, setKind] = useState<AccountKind>(account?.kind ?? 'card')
   const [currency, setCurrency] = useState(account?.currency ?? BASE_CURRENCY)
   const [color, setColor] = useState(account?.color ?? ACCOUNT_COLORS[0])
-  const [initial, setInitial] = useState(
-    account && account.initialBalance !== 0 ? toAmountInput(account.initialBalance) : '',
+  /**
+   * В поле — остаток прямо сейчас, а не точка отсчёта.
+   *
+   * Человек знает про свой счёт ровно одно число: сколько на нём лежит по данным
+   * банка. Показывать ему «начальный остаток», который после десятка операций
+   * ни с чем в реальности не совпадает, значит просить подогнать величину,
+   * которую он никогда не видел. Разницу пересчитаем сами при сохранении.
+   */
+  const current = account ? accountBalance(data, account.id) : 0
+  const [balance, setBalance] = useState(() =>
+    account && current !== 0 ? toBalanceInput(current) : '',
   )
   const [confirmingDelete, setConfirmingDelete] = useState(false)
 
-  const parsedInitial = initial.trim() === '' ? 0 : (parseAmount(initial) ?? 0)
-  const canSave = title.trim().length > 0
+  const parsedBalance = balance.trim() === '' ? 0 : parseBalance(balance)
+  const canSave = title.trim().length > 0 && parsedBalance !== null
+  // Насколько сдвинется точка отсчёта — это и есть вся правка остатка.
+  const delta = parsedBalance === null ? 0 : parsedBalance - current
 
   // Сколько операций и денег потеряется при удалении — это надо знать до нажатия.
   const affected = account
@@ -37,18 +48,18 @@ export function AccountSheet({ open, account, onClose }: AccountSheetProps) {
     : 0
 
   function handleSave() {
-    if (!canSave) return
+    if (!canSave || parsedBalance === null) return
 
-    const payload = {
-      title: title.trim(),
-      kind,
-      currency,
-      color,
-      initialBalance: parsedInitial,
+    const payload = { title: title.trim(), kind, currency, color }
+
+    if (account) {
+      actions.updateAccount(account.id, payload)
+      // Отдельным действием: остаток задаётся числом с экрана, а в точку
+      // отсчёта ложится разница — считать её должен store, а не форма.
+      actions.setAccountBalance(account.id, parsedBalance)
+    } else {
+      actions.addAccount({ ...payload, initialBalance: parsedBalance })
     }
-
-    if (account) actions.updateAccount(account.id, payload)
-    else actions.addAccount(payload)
 
     onClose()
   }
@@ -147,27 +158,45 @@ export function AccountSheet({ open, account, onClose }: AccountSheetProps) {
 
         <Field
           label="Сколько сейчас на счёте"
-          hint="Остаток на момент, когда вы заводите счёт. Он не считается доходом и в аналитику не попадает — иначе первый месяц был бы испорчен фиктивным заработком."
+          hint={
+            isEditing
+              ? 'Поставьте столько, сколько показывает банк. Остаток можно править когда угодно — это ваше число, а не вычисленное за вас.'
+              : 'Остаток на момент, когда вы заводите счёт. Он не считается доходом и в аналитику не попадает — иначе первый месяц был бы испорчен фиктивным заработком.'
+          }
         >
           <div className="flex items-baseline gap-2 rounded-2xl bg-surface px-4 py-4">
             <input
-              value={initial}
-              onChange={(e) => setInitial(formatAmountInput(e.target.value))}
+              value={balance}
+              onChange={(e) => setBalance(formatBalanceInput(e.target.value))}
               inputMode="decimal"
               placeholder="0"
               className="min-w-0 flex-1 bg-transparent text-[26px] font-semibold tabular-nums outline-none placeholder:text-muted"
             />
             <span className="text-[20px] font-medium text-muted">{currencySymbol(currency)}</span>
+            {/* На телефоне цифровая клавиатура минуса не даёт, а карта в минусе — обычное дело. */}
+            <button
+              onClick={() => setBalance((value) => (value.startsWith('−') ? value.slice(1) : `−${value}`))}
+              aria-label="Сменить знак"
+              className="shrink-0 self-center rounded-xl bg-bg px-2.5 py-1 text-[15px] font-semibold text-muted transition-transform active:scale-90"
+            >
+              ±
+            </button>
           </div>
         </Field>
 
-        {isEditing && account && (
-          <div className="flex items-baseline justify-between rounded-2xl bg-surface px-4 py-3.5">
-            <span className="text-[14px] text-muted">Остаток сейчас</span>
-            <span className="text-[17px] font-semibold tabular-nums">
-              {formatMoney(accountBalance(data, account.id), { currency: account.currency })}
-            </span>
-          </div>
+        {/*
+          Правка остатка ничего не пишет в историю — она двигает точку отсчёта.
+          Показываем это до нажатия «Сохранить»: молча изменившийся баланс на
+          пару тысяч выглядел бы как потерянная операция.
+        */}
+        {isEditing && account && delta !== 0 && (
+          <p className="-mt-2 rounded-2xl bg-surface px-4 py-3.5 text-[13px] leading-relaxed text-muted">
+            Было {formatMoney(current, { currency: account.currency })} — станет{' '}
+            {formatMoney(parsedBalance ?? 0, { currency: account.currency })}.{' '}
+            Разница {formatMoney(Math.abs(delta), { currency: account.currency })} уйдёт в начальный
+            остаток{affected > 0 ? ', история счёта останется нетронутой' : ''} — ни в доходах, ни в
+            расходах она не появится.
+          </p>
         )}
 
         <button

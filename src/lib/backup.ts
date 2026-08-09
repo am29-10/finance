@@ -146,27 +146,48 @@ function normalize(input: unknown): FinanceData {
 
   /**
    * Копии, снятые до появления счетов, поля accounts не имеют. Заводим счёт
-   * по умолчанию и переселяем на него всю историю: операция без счёта не
-   * попала бы ни в один остаток и молча исчезла бы из баланса. Копию без
-   * операций подпирать нечем — там и счёта быть не должно.
+   * по умолчанию и переселяем на него всю историю: тогда операция без счёта
+   * означала «счёт негде было указать», и без переселения она не попала бы ни
+   * в один остаток. Копию без операций подпирать нечем — там и счёта быть не
+   * должно.
+   *
+   * С v5 отсутствие счёта — осознанный выбор человека, поэтому копии с полем
+   * accounts (пусть даже пустым) не трогаем: приписать общей трате карту
+   * значило бы изменить остаток, которого человек не менял.
    */
+  const legacy = raw.accounts === undefined
+
   const accounts = Array.isArray(raw.accounts) && raw.accounts.length
     ? (raw.accounts.filter(isAccount) as Account[])
-    : operations.length > 0
+    : legacy && operations.length > 0
       ? [defaultAccount()]
       : []
 
   const fallback = accounts[0]?.id
 
+  /**
+   * Куда девать операцию, чей счёт в копию не попал.
+   *
+   * Из старой копии — на первый счёт: там отсутствие счёта означало «его негде
+   * было указать». Из новой — оставляем без счёта: приписать общей трате карту
+   * значило бы изменить остаток, которого человек не менял.
+   *
+   * Перевод — исключение: он и есть перемещение между счетами, и без источника
+   * от него остаётся бессмысленная строка. Такому лучше первый счёт, чем ничего.
+   */
+  const settle = (o: Operation): Operation => {
+    if (o.accountId && accounts.some((a) => a.id === o.accountId)) return o
+    if (legacy || o.type === 'transfer') {
+      return fallback ? { ...o, accountId: fallback } : o
+    }
+    return o.accountId ? { ...o, accountId: undefined } : o
+  }
+
   // Через migrate: копия могла быть снята любой прежней версией, и приводить её
   // к нынешней модели должен тот же код, что и данные из хранилища.
   return migrate({
     version: SCHEMA_VERSION,
-    operations: operations.map((o) =>
-      (o.accountId && accounts.some((a) => a.id === o.accountId)) || !fallback
-        ? o
-        : { ...o, accountId: fallback },
-    ),
+    operations: operations.map(settle),
     categories,
     accounts,
     // Копии, снятые до появления кредитов, поля loans не имеют — это нормально.
@@ -192,8 +213,9 @@ function isAccount(value: unknown): value is Account {
 }
 
 /**
- * Правило повтора принимаем только со счётом, который в этой же копии есть:
- * иначе оно молча не сработает ни разу, а человек будет ждать свою аренду.
+ * Правило повтора со счётом принимаем только тогда, когда счёт в этой же копии
+ * есть: иначе оно молча не сработает ни разу, а человек будет ждать свою аренду.
+ * Правило без счёта законно — оно заводит общую операцию, которой счёт не нужен.
  */
 function isRecurrence(value: unknown, accounts: Account[]): value is Recurrence {
   if (typeof value !== 'object' || value === null) return false
@@ -209,8 +231,9 @@ function isRecurrence(value: unknown, accounts: Account[]): value is Recurrence 
     (r.period === 'week' || r.period === 'month' || r.period === 'year') &&
     typeof r.startDate === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(r.startDate) &&
-    typeof r.accountId === 'string' &&
-    accounts.some((account) => account.id === r.accountId)
+    (r.accountId === undefined ||
+      (typeof r.accountId === 'string' &&
+        accounts.some((account) => account.id === r.accountId)))
   )
 }
 
