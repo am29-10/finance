@@ -66,7 +66,15 @@ export function Sheet({ open, onClose, title, children }: SheetProps) {
           <span className="size-9" />
         </div>
 
-        <div className="overflow-y-auto px-5 pb-5">{children}</div>
+        {/*
+          overflow-x задан явно, и это не перестраховка. Стоит объявить прокрутку
+          по одной оси, как вторая перестаёт быть visible и тоже становится
+          прокручиваемой — шторка превращается в собственный контейнер прокрутки
+          внутри страницы, до которого общий запрет на документе не достаёт.
+          Заметно это ровно при заполнении формы: коснувшись поля, браузер сам
+          подтягивает его в видимую область и заодно возит содержимое вбок.
+        */}
+        <div className="overflow-y-auto overflow-x-clip px-5 pb-5">{children}</div>
       </div>
     </div>
   )
