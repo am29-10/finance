@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import sharp from 'sharp'
-import { buildSvg } from './icon-svg.mjs'
+import { buildSplashSvg, buildSvg, SPLASH_SCREENS, splashFile } from './icon-svg.mjs'
 
 /**
  * Иконки сайта из общего шаблона. Запуск: npm run icons
@@ -30,3 +30,26 @@ for (const { file, size, scale } of targets) {
 
 await writeFile(join(publicDir, 'favicon.svg'), buildSvg(), 'utf8')
 console.log('✓ favicon.svg')
+
+/**
+ * Заставки запуска для iPhone.
+ *
+ * Пока их нет, iOS показывает при запуске с иконки белый экран — и никакая
+ * разметка внутри страницы этого не исправит: заставку рисует система ещё до
+ * того, как дело дойдёт до HTML. Картинка нужна ровно в размер экрана, иначе
+ * система её не возьмёт, поэтому файл заводится на каждое устройство.
+ */
+const splashDir = join(publicDir, 'splash')
+await mkdir(splashDir, { recursive: true })
+
+for (const screen of SPLASH_SCREENS) {
+  const width = screen.width * screen.ratio
+  const height = screen.height * screen.ratio
+  const file = splashFile(screen)
+
+  await sharp(Buffer.from(buildSplashSvg({ width, height })))
+    .png({ compressionLevel: 9, palette: true })
+    .toFile(join(splashDir, file))
+
+  console.log(`✓ splash/${file} (${width}×${height})`)
+}

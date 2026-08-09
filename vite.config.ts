@@ -67,6 +67,10 @@ export default defineConfig(({ mode }) => {
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg}'],
+        // Заставки запуска показывает система ещё до того, как дело дойдёт до
+        // service worker: в его кеше они пролежали бы без дела, раздувая объём,
+        // который приложение скачивает при первом заходе.
+        globIgnores: ['**/splash/*'],
         navigateFallback: `${base}index.html`,
       },
       devOptions: { enabled: true },
