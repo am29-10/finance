@@ -1,4 +1,4 @@
-import { defaultCategories } from './categories'
+import { defaultCategories, MERGED_CATEGORIES } from './categories'
 import { DEFAULT_ACCOUNT_ID, defaultAccount } from './accounts'
 import type { Account, Category, FinanceData, Operation } from './types'
 import { DEFAULT_SETTINGS, SCHEMA_VERSION } from './types'
@@ -70,17 +70,21 @@ export function migrate(data: FinanceData): FinanceData {
         )
       : operations
 
+  // Кафе и рестораны стали одной категорией: ссылки переносим до того, как
+  // опустевшая категория уйдёт из списка, — иначе история повисла бы в пустоте.
+  const merged = mergeCategories(settled)
+
   return {
     version: SCHEMA_VERSION,
-    operations: settled,
+    operations: merged,
     // Встроенные категории появляются со временем — кредиты, аренда квартиры,
     // — а копируются в базу только при первом запуске. Дозаводим недостающие,
     // иначе новая категория дошла бы лишь до тех, кто ставит приложение с нуля.
-    categories: withFreshColors(withBuiltinCategories(categories)),
-    accounts: withoutUnusedDefault(accounts, settled, data.loans ?? []),
+    categories: withFreshBuiltins(withBuiltinCategories(withoutMerged(categories))),
+    accounts: withoutUnusedDefault(accounts, merged, data.loans ?? []),
     loans: data.loans ?? [],
     // v3 → v4: появились повторяющиеся операции; у старых баз правил нет.
-    recurrences: data.recurrences ?? [],
+    recurrences: mergeCategories(data.recurrences ?? []),
     settings: { ...DEFAULT_SETTINGS, ...data.settings, rates: data.settings?.rates ?? {} },
   }
 }
@@ -149,20 +153,50 @@ function withBuiltinCategories(categories: Category[]): Category[] {
 }
 
 /**
- * Подтягивает цвета встроенных категорий из кода.
+ * Подтягивает встроенные категории из кода: название, иконку и цвет.
  *
- * Категории копируются в базу при первом запуске, поэтому исправленная палитра
- * сама собой доходит только до новых пользователей — у остальных навсегда
- * остались бы старые цвета, ради которых её и меняли. Сверяемся по id: чужие
- * категории в списке останутся как есть.
+ * Категории копируются в базу при первом запуске, поэтому исправленное в коде
+ * само собой доходит только до новых пользователей — у остальных навсегда
+ * остались бы прежние названия и цвета, ради которых их и меняли. Так «Кафе»
+ * становится «Кафе и рестораны» у всех, а не только у тех, кто ставит
+ * приложение с нуля.
+ *
+ * Сверяемся по id, поэтому свои категории человека остаются как есть — их в
+ * defaultCategories нет.
  */
-function withFreshColors(categories: Category[]): Category[] {
-  const palette = new Map(defaultCategories().map((category) => [category.id, category.color]))
+function withFreshBuiltins(categories: Category[]): Category[] {
+  const builtins = new Map(defaultCategories().map((category) => [category.id, category]))
 
   return categories.map((category) => {
-    const fresh = palette.get(category.id)
-    return fresh && fresh !== category.color ? { ...category, color: fresh } : category
+    const fresh = builtins.get(category.id)
+    if (!fresh) return category
+
+    const same =
+      fresh.title === category.title &&
+      fresh.icon === category.icon &&
+      fresh.color === category.color
+
+    return same ? category : { ...category, title: fresh.title, icon: fresh.icon, color: fresh.color }
   })
+}
+
+/**
+ * Переносит ссылки со слитых категорий и убирает опустевшие.
+ *
+ * Порядок важен: сначала переселяем операции и правила, потом выбрасываем
+ * категорию. Наоборот — и история на мгновение осталась бы висеть в пустоте,
+ * а `withBuiltinCategories` тут же завела бы её обратно, увидев незнакомый id.
+ */
+function mergeCategories<T extends { categoryId: string }>(items: T[]): T[] {
+  return items.map((item) => {
+    const target = MERGED_CATEGORIES[item.categoryId]
+    return target ? { ...item, categoryId: target } : item
+  })
+}
+
+/** Убирает из списка категории, слитые с другими. */
+function withoutMerged(categories: Category[]): Category[] {
+  return categories.filter((category) => !MERGED_CATEGORIES[category.id])
 }
 
 export function emptyData(): FinanceData {

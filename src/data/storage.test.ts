@@ -197,6 +197,66 @@ describe('migrate: старые базы', () => {
   })
 })
 
+describe('migrate: слияние категорий', () => {
+  /** База, снятая до слияния: «Рестораны» ещё отдельная категория. */
+  function withRestaurants(patch: Partial<FinanceData> = {}): FinanceData {
+    return stored({
+      categories: [
+        ...defaultCategories(),
+        {
+          id: 'restaurants',
+          title: 'Рестораны',
+          type: 'expense' as const,
+          icon: 'dish',
+          color: '#db2777',
+        },
+      ],
+      ...patch,
+    })
+  }
+
+  it('переносит операции из «Ресторанов» в «Кафе и рестораны»', () => {
+    const data = migrate(
+      withRestaurants({ operations: [operation({ categoryId: 'restaurants' })] }),
+    )
+
+    expect(data.operations[0].categoryId).toBe('cafe')
+  })
+
+  it('переносит и правила повтора — иначе они заводили бы операции в пустоту', () => {
+    const data = migrate(
+      withRestaurants({
+        recurrences: [
+          {
+            id: 'r1',
+            type: 'expense',
+            amount: 100_000,
+            categoryId: 'restaurants',
+            accountId: DEFAULT_ACCOUNT_ID,
+            period: 'month',
+            startDate: '2026-01-10',
+            createdAt: '2026-01-10T00:00:00.000Z',
+          },
+        ],
+      }),
+    )
+
+    expect(data.recurrences[0].categoryId).toBe('cafe')
+  })
+
+  it('убирает опустевшую категорию и не заводит её обратно', () => {
+    const data = migrate(withRestaurants())
+
+    expect(data.categories.some((c) => c.id === 'restaurants')).toBe(false)
+  })
+
+  it('переименовывает «Кафе» у тех, кто завёл базу до слияния', () => {
+    const data = migrate(withRestaurants())
+
+    expect(data.categories.find((c) => c.id === 'cafe')?.title).toBe('Кафе и рестораны')
+  })
+})
+
 describe('migrate: цвета категорий', () => {
   it('обновляет цвета встроенных категорий из кода', () => {
     const stale = defaultCategories().map((c) =>
