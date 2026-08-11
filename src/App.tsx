@@ -9,6 +9,8 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { LoansScreen } from './screens/LoansScreen'
 import { AccountsScreen } from './screens/AccountsScreen'
 import { RecurringScreen } from './screens/RecurringScreen'
+import { VehiclesScreen } from './screens/VehiclesScreen'
+import { PropertiesScreen } from './screens/PropertiesScreen'
 import { BackupSheet } from './components/BackupSheet'
 import { actions, useFinance } from './data/store'
 import { isBackupDue } from './lib/backup'
@@ -16,6 +18,9 @@ import type { Operation } from './data/types'
 
 const TAB_KEY = 'finance:tab'
 const UNLOCKED_KEY = 'finance:unlocked'
+
+/** Экран поверх главной. null — открыта сама главная. */
+type Overlay = 'loans' | 'accounts' | 'recurring' | 'vehicles' | 'properties' | null
 
 export default function App() {
   const data = useFinance()
@@ -32,12 +37,11 @@ export default function App() {
   const [unlocked, setUnlocked] = useState(() => sessionStorage.getItem(UNLOCKED_KEY) === '1')
 
   /**
-   * Кредиты — не вкладка, а экран поверх главной: таббар и так занят,
-   * а заходят сюда реже, чем в операции.
+   * Кредиты, счета, машина и недвижимость — не вкладки, а экраны поверх
+   * главной: таббар и так занят, а заходят сюда реже, чем в операции.
+   * Открыт всегда ровно один — они и открываются с разных мест главной.
    */
-  const [loansOpen, setLoansOpen] = useState(false)
-  const [accountsOpen, setAccountsOpen] = useState(false)
-  const [recurringOpen, setRecurringOpen] = useState(false)
+  const [overlay, setOverlay] = useState<Overlay>(null)
 
   useEffect(() => {
     localStorage.setItem(TAB_KEY, tab)
@@ -97,31 +101,17 @@ export default function App() {
     )
   }
 
-  if (accountsOpen) {
-    return (
-      <div className="mx-auto flex min-h-full max-w-lg flex-col">
-        <main className="flex-1 pb-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <AccountsScreen onBack={() => setAccountsOpen(false)} />
-        </main>
-      </div>
-    )
-  }
+  if (overlay) {
+    const close = () => setOverlay(null)
 
-  if (recurringOpen) {
     return (
       <div className="mx-auto flex min-h-full max-w-lg flex-col">
         <main className="flex-1 pb-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <RecurringScreen onBack={() => setRecurringOpen(false)} />
-        </main>
-      </div>
-    )
-  }
-
-  if (loansOpen) {
-    return (
-      <div className="mx-auto flex min-h-full max-w-lg flex-col">
-        <main className="flex-1 pb-10" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
-          <LoansScreen onBack={() => setLoansOpen(false)} />
+          {overlay === 'accounts' && <AccountsScreen onBack={close} />}
+          {overlay === 'recurring' && <RecurringScreen onBack={close} />}
+          {overlay === 'loans' && <LoansScreen onBack={close} />}
+          {overlay === 'vehicles' && <VehiclesScreen onBack={close} />}
+          {overlay === 'properties' && <PropertiesScreen onBack={close} />}
         </main>
       </div>
     )
@@ -134,13 +124,15 @@ export default function App() {
           <HomeScreen
             onEdit={openSheet}
             onShowAll={() => setTab('operations')}
-            onOpenLoans={() => setLoansOpen(true)}
-            onOpenAccounts={() => setAccountsOpen(true)}
+            onOpenLoans={() => setOverlay('loans')}
+            onOpenAccounts={() => setOverlay('accounts')}
+            onOpenVehicles={() => setOverlay('vehicles')}
+            onOpenProperties={() => setOverlay('properties')}
           />
         )}
         {tab === 'operations' && <OperationsScreen onEdit={openSheet} />}
         {tab === 'analytics' && <AnalyticsScreen />}
-        {tab === 'profile' && <ProfileScreen onOpenRecurring={() => setRecurringOpen(true)} />}
+        {tab === 'profile' && <ProfileScreen onOpenRecurring={() => setOverlay('recurring')} />}
       </main>
 
       <TabBar active={tab} onChange={setTab} onAdd={() => openSheet()} />
@@ -151,7 +143,7 @@ export default function App() {
           open={sheetOpen}
           operation={sheet.operation}
           onClose={closeSheet}
-          onAddAccount={() => setAccountsOpen(true)}
+          onAddAccount={() => setOverlay('accounts')}
         />
       )}
 

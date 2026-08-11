@@ -209,6 +209,97 @@ export interface Loan {
   createdAt: string
 }
 
+/* ── Машина ────────────────────────────────────────────────────────────── */
+
+/**
+ * Что именно делали с машиной. Тип нужен не для отчёта, а для узнавания:
+ * в списке из двадцати строк «Замена масла» и «Новая резина» ищут глазами
+ * по значку, а не читают каждую подпись.
+ */
+export type ServiceKind = 'service' | 'tires' | 'battery' | 'repair' | 'part' | 'inspection'
+
+/**
+ * Запись в журнале обслуживания.
+ *
+ * Денег здесь нет намеренно: расход на сервис человек уже завёл в операциях,
+ * и вторая сумма в другом месте означала бы, что одна из них рано или поздно
+ * разойдётся с другой. Журнал отвечает на единственный вопрос — что и когда
+ * с машиной делали.
+ */
+export interface ServiceRecord {
+  id: string
+  kind: ServiceKind
+  /** Что делали: «Замена масла». */
+  title: string
+  date: DateKey
+  /** Пробег на день работ, в километрах. Может отсутствовать: вспомнили задним числом. */
+  mileage?: number
+  note?: string
+  /** Когда делать в следующий раз — по календарю и по пробегу; любое из двух или оба. */
+  nextDate?: DateKey
+  nextMileage?: number
+  createdAt: string
+}
+
+export interface Vehicle {
+  id: string
+  /** Как человек её называет: «BMW 320i». */
+  title: string
+  /** Год выпуска. */
+  year?: number
+  plate?: string
+  vin?: string
+  /**
+   * Текущий пробег в километрах.
+   *
+   * Хранится отдельно от записей журнала, потому что меняется без них: между
+   * двумя визитами в сервис машина проехала десять тысяч, и напоминание
+   * «следующая замена на 97 000» должно об этом знать. Запись с большим
+   * пробегом двигает его сама — вводить одно и то же число дважды незачем.
+   */
+  mileage?: number
+  records: ServiceRecord[]
+  createdAt: string
+}
+
+/* ── Недвижимость ──────────────────────────────────────────────────────── */
+
+export type PropertyKind = 'flat' | 'house' | 'room' | 'other'
+
+/**
+ * Зачем человеку этот объект. От назначения зависит, что о нём вообще имеет
+ * смысл спрашивать: у сдаваемой квартиры важны арендатор и срок договора,
+ * у своей — этаж и год ремонта, и валить это в одну карточку значило бы
+ * показывать каждому половину полей впустую.
+ */
+export type PropertyPurpose = 'living' | 'rent' | 'invest' | 'other'
+
+export interface Property {
+  id: string
+  /** «Квартира на Ленина» — так человек её и называет в разговоре. */
+  title: string
+  kind: PropertyKind
+  purpose: PropertyPurpose
+  address?: string
+  /**
+   * Площадь в ДЕСЯТЫХ ДОЛЯХ квадратного метра: 62,5 м² → 625.
+   * Целое по той же причине, что и суммы: дробь в числе накапливает ошибку,
+   * а половина метра в документах на квартиру встречается постоянно.
+   */
+  area?: number
+  rooms?: number
+  floor?: number
+  note?: string
+  /** Арендатор и срок договора — только у сдаваемой. */
+  tenant?: string
+  contractUntil?: DateKey
+  /** День месяца, когда приходит оплата аренды, 1–31. */
+  rentDay?: number
+  /** Год последнего ремонта — у той, в которой живут. */
+  renovationYear?: number
+  createdAt: string
+}
+
 export interface Settings {
   /** Месячный бюджет в копейках; 0 — не задан. */
   monthlyBudget: number
@@ -236,10 +327,17 @@ export interface FinanceData {
   accounts: Account[]
   loans: Loan[]
   recurrences: Recurrence[]
+  /**
+   * Машины и недвижимость. С деньгами не связаны ничем: ни в баланс, ни в
+   * аналитику не попадают. Это справочник о вещах, а не ещё один вид счёта, —
+   * стоимость квартиры, записанная в приложении, устарела бы в тот же месяц.
+   */
+  vehicles: Vehicle[]
+  properties: Property[]
   settings: Settings
 }
 
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 export const DEFAULT_SETTINGS: Settings = {
   monthlyBudget: 0,

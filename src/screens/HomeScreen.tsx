@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { BudgetCard } from '../components/BudgetCard'
 import { BudgetSheet } from '../components/BudgetSheet'
 import { LoansCard } from '../components/LoansCard'
+import { AssetsCard } from '../components/AssetsCard'
 import { AccountsStrip } from '../components/AccountsStrip'
 import { DonutChart } from '../components/DonutChart'
 import { OperationRow } from '../components/OperationRow'
@@ -40,9 +41,18 @@ interface HomeScreenProps {
   onShowAll: () => void
   onOpenLoans: () => void
   onOpenAccounts: () => void
+  onOpenVehicles: () => void
+  onOpenProperties: () => void
 }
 
-export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: HomeScreenProps) {
+export function HomeScreen({
+  onEdit,
+  onShowAll,
+  onOpenLoans,
+  onOpenAccounts,
+  onOpenVehicles,
+  onOpenProperties,
+}: HomeScreenProps) {
   const data = useFinance()
   const [month, setMonth] = useState(() => startOfMonth(new Date()))
   const [hidden, setHidden] = useState(() => localStorage.getItem(HIDDEN_KEY) === '1')
@@ -128,6 +138,20 @@ export function HomeScreen({ onEdit, onShowAll, onOpenLoans, onOpenAccounts }: H
 
       <div className="mt-2.5">
         <LoansCard loans={data.loans} hidden={hidden} onOpen={onOpenLoans} />
+      </div>
+
+      {/*
+        Машина и недвижимость стоят после денежных карточек и до обзора: это
+        не финансовые разделы, в баланс они не входят и спорить с ним за
+        внимание не должны.
+      */}
+      <div className="mt-5">
+        <AssetsCard
+          vehicles={data.vehicles}
+          properties={data.properties}
+          onOpenVehicles={onOpenVehicles}
+          onOpenProperties={onOpenProperties}
+        />
       </div>
 
       <div className="mt-6 mb-3 flex items-center justify-between px-1">

@@ -39,6 +39,8 @@ function stored(patch: Partial<FinanceData> = {}): FinanceData {
     accounts: [],
     loans: [],
     recurrences: [],
+    vehicles: [],
+    properties: [],
     settings: { monthlyBudget: 0, rates: {} },
     ...patch,
   }
@@ -187,6 +189,25 @@ describe('migrate: старые базы', () => {
     delete (legacy as Partial<FinanceData>).recurrences
 
     expect(migrate(legacy).recurrences).toEqual([])
+  })
+
+  it('добавляет пустые списки машин и недвижимости', () => {
+    const legacy = stored()
+    delete (legacy as Partial<FinanceData>).vehicles
+    delete (legacy as Partial<FinanceData>).properties
+
+    const data = migrate(legacy)
+
+    expect(data.vehicles).toEqual([])
+    expect(data.properties).toEqual([])
+  })
+
+  it('подставляет машине пустой журнал, если его нет', () => {
+    const data = migrate(
+      stored({ vehicles: [{ id: 'v1', title: 'BMW 320i', createdAt: '' } as never] }),
+    )
+
+    expect(data.vehicles[0].records).toEqual([])
   })
 
   it('переносит настройки, подставляя недостающее', () => {

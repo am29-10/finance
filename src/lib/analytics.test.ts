@@ -25,6 +25,8 @@ function data(operations: Operation[]): FinanceData {
     accounts: [],
     loans: [],
     recurrences: [],
+    vehicles: [],
+    properties: [],
     settings: { monthlyBudget: 0, rates: {} },
   }
 }

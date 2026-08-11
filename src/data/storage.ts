@@ -1,6 +1,6 @@
 import { defaultCategories, MERGED_CATEGORIES } from './categories'
 import { DEFAULT_ACCOUNT_ID, defaultAccount } from './accounts'
-import type { Account, Category, FinanceData, Operation } from './types'
+import type { Account, Category, FinanceData, Operation, Vehicle } from './types'
 import { DEFAULT_SETTINGS, SCHEMA_VERSION } from './types'
 
 /**
@@ -85,6 +85,9 @@ export function migrate(data: FinanceData): FinanceData {
     loans: data.loans ?? [],
     // v3 → v4: появились повторяющиеся операции; у старых баз правил нет.
     recurrences: mergeCategories(data.recurrences ?? []),
+    // v5 → v6: появились машины и недвижимость.
+    vehicles: (data.vehicles ?? []).map(withRecords),
+    properties: data.properties ?? [],
     settings: { ...DEFAULT_SETTINGS, ...data.settings, rates: data.settings?.rates ?? {} },
   }
 }
@@ -194,6 +197,15 @@ function mergeCategories<T extends { categoryId: string }>(items: T[]): T[] {
   })
 }
 
+/**
+ * Машина без журнала — машина с пустым журналом, а не с отсутствующим.
+ * Экран перебирает `records` без оглядки, и одна запись, пришедшая из чужой
+ * копии без этого поля, уронила бы его целиком.
+ */
+function withRecords(vehicle: Vehicle): Vehicle {
+  return vehicle.records ? vehicle : { ...vehicle, records: [] }
+}
+
 /** Убирает из списка категории, слитые с другими. */
 function withoutMerged(categories: Category[]): Category[] {
   return categories.filter((category) => !MERGED_CATEGORIES[category.id])
@@ -208,6 +220,8 @@ export function emptyData(): FinanceData {
     accounts: [],
     loans: [],
     recurrences: [],
+    vehicles: [],
+    properties: [],
     settings: { ...DEFAULT_SETTINGS },
   }
 }

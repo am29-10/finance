@@ -10,8 +10,11 @@ import type {
   Loan,
   Operation,
   Prepayment,
+  Property,
   Recurrence,
+  ServiceRecord,
   Settings,
+  Vehicle,
 } from './types'
 import { duePayments } from '../lib/loan'
 import { todayKey } from '../lib/date'
@@ -58,6 +61,18 @@ function newId(): string {
     return crypto.randomUUID()
   }
   return `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+/**
+ * Пробег машины после записи в журнал: он только растёт.
+ *
+ * Запись задним числом — «в мае меняли колодки на 84 300» — не должна
+ * отматывать табло назад, поэтому меньшее число игнорируется.
+ */
+function grownMileage(current: number | undefined, fromRecord: number | undefined): number | undefined {
+  if (fromRecord === undefined) return current
+  if (current === undefined) return fromRecord
+  return Math.max(current, fromRecord)
 }
 
 /* ── Кредиты и расходы ─────────────────────────────────────────────────── */
@@ -472,6 +487,115 @@ export const actions = {
     )
   },
 
+  /* ── Машины ──────────────────────────────────────────────────────────── */
+
+  addVehicle(input: Omit<Vehicle, 'id' | 'createdAt' | 'records'>): Vehicle {
+    const vehicle: Vehicle = {
+      ...input,
+      id: newId(),
+      records: [],
+      createdAt: new Date().toISOString(),
+    }
+
+    setState({ ...state, vehicles: [...state.vehicles, vehicle] })
+    return vehicle
+  },
+
+  updateVehicle(id: string, patch: Partial<Omit<Vehicle, 'id' | 'createdAt' | 'records'>>) {
+    setState({
+      ...state,
+      vehicles: state.vehicles.map((vehicle) =>
+        vehicle.id === id ? { ...vehicle, ...patch } : vehicle,
+      ),
+    })
+  },
+
+  /** Машина уходит вместе со своим журналом: без неё записи не к чему отнести. */
+  deleteVehicle(id: string) {
+    setState({ ...state, vehicles: state.vehicles.filter((vehicle) => vehicle.id !== id) })
+  },
+
+  /**
+   * Записать работы в журнал.
+   *
+   * Пробег из записи подтягивает текущий пробег машины, если он больше:
+   * человек только что ввёл число на табло — заставлять его вписать то же
+   * самое второй раз в карточку значит гарантированно получить расхождение.
+   */
+  addService(vehicleId: string, input: Omit<ServiceRecord, 'id' | 'createdAt'>): void {
+    const record: ServiceRecord = {
+      ...input,
+      id: newId(),
+      createdAt: new Date().toISOString(),
+    }
+
+    setState({
+      ...state,
+      vehicles: state.vehicles.map((vehicle) =>
+        vehicle.id === vehicleId
+          ? {
+              ...vehicle,
+              records: [...vehicle.records, record],
+              mileage: grownMileage(vehicle.mileage, record.mileage),
+            }
+          : vehicle,
+      ),
+    })
+  },
+
+  updateService(
+    vehicleId: string,
+    recordId: string,
+    patch: Partial<Omit<ServiceRecord, 'id' | 'createdAt'>>,
+  ) {
+    setState({
+      ...state,
+      vehicles: state.vehicles.map((vehicle) =>
+        vehicle.id === vehicleId
+          ? {
+              ...vehicle,
+              records: vehicle.records.map((record) =>
+                record.id === recordId ? { ...record, ...patch } : record,
+              ),
+              mileage: grownMileage(vehicle.mileage, patch.mileage),
+            }
+          : vehicle,
+      ),
+    })
+  },
+
+  deleteService(vehicleId: string, recordId: string) {
+    setState({
+      ...state,
+      vehicles: state.vehicles.map((vehicle) =>
+        vehicle.id === vehicleId
+          ? { ...vehicle, records: vehicle.records.filter((record) => record.id !== recordId) }
+          : vehicle,
+      ),
+    })
+  },
+
+  /* ── Недвижимость ────────────────────────────────────────────────────── */
+
+  addProperty(input: Omit<Property, 'id' | 'createdAt'>): Property {
+    const property: Property = { ...input, id: newId(), createdAt: new Date().toISOString() }
+    setState({ ...state, properties: [...state.properties, property] })
+    return property
+  },
+
+  updateProperty(id: string, patch: Partial<Omit<Property, 'id' | 'createdAt'>>) {
+    setState({
+      ...state,
+      properties: state.properties.map((property) =>
+        property.id === id ? { ...property, ...patch } : property,
+      ),
+    })
+  },
+
+  deleteProperty(id: string) {
+    setState({ ...state, properties: state.properties.filter((property) => property.id !== id) })
+  },
+
   /* ── Очистка ─────────────────────────────────────────────────────────── */
 
   /**
@@ -513,6 +637,14 @@ export function activeLoans(data: FinanceData): Loan[] {
 
 export function closedLoans(data: FinanceData): Loan[] {
   return data.loans.filter((loan) => loan.closedAt)
+}
+
+export function vehicleById(data: FinanceData, id: string): Vehicle | undefined {
+  return data.vehicles.find((vehicle) => vehicle.id === id)
+}
+
+export function propertyById(data: FinanceData, id: string): Property | undefined {
+  return data.properties.find((property) => property.id === id)
 }
 
 /** Порядок «свежее сверху»: по дате, внутри дня — по времени добавления. */

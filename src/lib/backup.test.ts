@@ -159,6 +159,67 @@ describe('readBackup', () => {
     expect(data.loans).toEqual([])
     expect(data.recurrences).toEqual([])
   })
+
+  it('переносит машину вместе с журналом', async () => {
+    const data = await readBackup(
+      file({
+        operations: [],
+        accounts: [],
+        vehicles: [
+          {
+            id: 'v1',
+            title: 'BMW 320i',
+            mileage: 87_420,
+            createdAt: '2026-01-01T00:00:00.000Z',
+            records: [
+              {
+                id: 'r1',
+                kind: 'service',
+                title: 'Замена масла',
+                date: '2026-08-02',
+                mileage: 87_000,
+                createdAt: '2026-08-02T00:00:00.000Z',
+              },
+              // Запись без даты — из истории её не показать, а экран уронить может.
+              { id: 'r2', kind: 'service', title: 'Без даты' },
+            ],
+          },
+        ],
+      }),
+    )
+
+    expect(data.vehicles).toHaveLength(1)
+    expect(data.vehicles[0].records.map((r) => r.id)).toEqual(['r1'])
+  })
+
+  it('переносит недвижимость и выбрасывает объект без типа', async () => {
+    const data = await readBackup(
+      file({
+        operations: [],
+        accounts: [],
+        properties: [
+          {
+            id: 'p1',
+            title: 'Квартира на Ленина',
+            kind: 'flat',
+            purpose: 'rent',
+            area: 450,
+            createdAt: '2026-01-01T00:00:00.000Z',
+          },
+          { id: 'p2', title: 'Что-то' },
+        ],
+      }),
+    )
+
+    expect(data.properties.map((p) => p.id)).toEqual(['p1'])
+  })
+
+  it('принимает копию, снятую до появления машин и недвижимости', async () => {
+    const data = await readBackup(file({ operations: [operation()], accounts: [account] }))
+
+    expect(data.vehicles).toEqual([])
+    expect(data.properties).toEqual([])
+  })
 })
 
 describe('isBackupDue', () => {

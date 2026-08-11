@@ -9,7 +9,9 @@ import {
   type Account,
   type Loan,
   type Operation,
+  type Property,
   type Recurrence,
+  type Vehicle,
 } from '../data/types'
 import { download } from './csv'
 import { toDateKey } from './date'
@@ -195,6 +197,9 @@ function normalize(input: unknown): FinanceData {
     recurrences: Array.isArray(raw.recurrences)
       ? raw.recurrences.filter((rule) => isRecurrence(rule, accounts))
       : [],
+    // Копии, снятые до появления машин и недвижимости, этих полей не имеют.
+    vehicles: Array.isArray(raw.vehicles) ? raw.vehicles.filter(isVehicle).map(withServices) : [],
+    properties: Array.isArray(raw.properties) ? raw.properties.filter(isProperty) : [],
     settings: { ...DEFAULT_SETTINGS, ...raw.settings, rates: raw.settings?.rates ?? {} },
   })
 }
@@ -254,6 +259,48 @@ function isLoan(value: unknown): value is Loan {
     typeof l.startDate === 'string' &&
     /^\d{4}-\d{2}-\d{2}$/.test(l.startDate) &&
     Array.isArray(l.prepayments)
+  )
+}
+
+/**
+ * Машину принимаем даже без журнала — важно название, — а вот битые записи
+ * из журнала выбрасываем: строка без даты в истории обслуживания бесполезна,
+ * зато уронить экран может.
+ */
+function isVehicle(value: unknown): value is Vehicle {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Partial<Vehicle>
+
+  return typeof v.id === 'string' && typeof v.title === 'string'
+}
+
+function withServices(vehicle: Vehicle): Vehicle {
+  return {
+    ...vehicle,
+    records: Array.isArray(vehicle.records) ? vehicle.records.filter(isServiceRecord) : [],
+  }
+}
+
+function isServiceRecord(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const r = value as Partial<Vehicle['records'][number]>
+
+  return (
+    typeof r.id === 'string' &&
+    typeof r.title === 'string' &&
+    typeof r.date === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(r.date)
+  )
+}
+
+function isProperty(value: unknown): value is Property {
+  if (typeof value !== 'object' || value === null) return false
+  const p = value as Partial<Property>
+
+  return (
+    typeof p.id === 'string' &&
+    typeof p.title === 'string' &&
+    (p.kind === 'flat' || p.kind === 'house' || p.kind === 'room' || p.kind === 'other')
   )
 }
 

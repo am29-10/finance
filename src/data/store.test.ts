@@ -50,6 +50,8 @@ function data(patch: Partial<FinanceData> = {}): FinanceData {
     accounts: [account()],
     loans: [],
     recurrences: [],
+    vehicles: [],
+    properties: [],
     settings: { monthlyBudget: 0, rates: {} },
     ...patch,
   }
@@ -516,5 +518,81 @@ describe('applyRecurrences', () => {
 
     expect(created.type).toBe('transfer')
     expect(created.toAccountId).toBe('a2')
+  })
+})
+
+describe('actions: машина и её журнал', () => {
+  /** Действия меняют модульное состояние, а наружу оно видно через хранилище. */
+  function afterAction(seed: FinanceData, run: () => void): FinanceData {
+    actions.replaceAll(seed)
+    run()
+    return localStorageAdapter.load()!
+  }
+
+  const service = {
+    kind: 'service' as const,
+    title: 'Замена масла',
+    date: '2026-08-02',
+    mileage: 87_000,
+  }
+
+  it('заводит машину с пустым журналом', () => {
+    const next = afterAction(data(), () => actions.addVehicle({ title: 'BMW 320i' }))
+
+    expect(next.vehicles).toHaveLength(1)
+    expect(next.vehicles[0].records).toEqual([])
+  })
+
+  it('подтягивает пробег из записи, если он вырос', () => {
+    const next = afterAction(data(), () => {
+      const car = actions.addVehicle({ title: 'BMW 320i', mileage: 84_300 })
+      actions.addService(car.id, service)
+    })
+
+    expect(next.vehicles[0].mileage).toBe(87_000)
+  })
+
+  it('не отматывает пробег назад записью задним числом', () => {
+    const next = afterAction(data(), () => {
+      const car = actions.addVehicle({ title: 'BMW 320i', mileage: 87_420 })
+      actions.addService(car.id, { ...service, date: '2026-05-15', mileage: 84_300 })
+    })
+
+    expect(next.vehicles[0].mileage).toBe(87_420)
+  })
+
+  it('удаляет машину вместе с журналом', () => {
+    const next = afterAction(data(), () => {
+      const car = actions.addVehicle({ title: 'BMW 320i' })
+      actions.addService(car.id, service)
+      actions.deleteVehicle(car.id)
+    })
+
+    expect(next.vehicles).toEqual([])
+  })
+
+  it('убирает одну запись, не трогая остальные', () => {
+    const next = afterAction(data(), () => {
+      const car = actions.addVehicle({ title: 'BMW 320i' })
+      actions.addService(car.id, service)
+      actions.addService(car.id, { ...service, title: 'Тормозные колодки' })
+      actions.deleteService(car.id, localStorageAdapter.load()!.vehicles[0].records[0].id)
+    })
+
+    expect(next.vehicles[0].records.map((r) => r.title)).toEqual(['Тормозные колодки'])
+  })
+
+  it('оставляет машины и объекты при очистке истории операций', () => {
+    // Журнал обслуживания — не операции: стирая расходы, человек не просил
+    // забыть, что он менял масло.
+    const next = afterAction(data({ operations: [operation()] }), () => {
+      actions.addVehicle({ title: 'BMW 320i' })
+      actions.addProperty({ title: 'Квартира', kind: 'flat', purpose: 'living' })
+      actions.clearOperations()
+    })
+
+    expect(next.operations).toEqual([])
+    expect(next.vehicles).toHaveLength(1)
+    expect(next.properties).toHaveLength(1)
   })
 })

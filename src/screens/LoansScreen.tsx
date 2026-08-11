@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { CategoryIcon } from '../components/CategoryIcon'
+import { ScreenHeader } from '../components/ScreenHeader'
 import { LoanSheet } from '../components/LoanSheet'
 import { PrepaymentSheet } from '../components/PrepaymentSheet'
 import { actions, activeLoans, closedLoans, loanById, useFinance } from '../data/store'
@@ -72,7 +73,7 @@ export function LoansScreen({ onBack }: LoansScreenProps) {
 
   return (
     <div className="px-4 pb-8">
-      <Header title="Кредиты" onBack={onBack} />
+      <ScreenHeader title="Кредиты" onBack={onBack} />
 
       {active.length === 0 && closed.length === 0 ? (
         <div className="mt-6 rounded-2xl bg-surface px-6 py-10 text-center">
@@ -199,7 +200,7 @@ function LoanDetail({
 
   return (
     <div className="px-4 pb-8">
-      <Header title={loan.title} onBack={onBack} action={{ label: 'Изменить', onClick: onEdit }} />
+      <ScreenHeader title={loan.title} onBack={onBack} action={{ label: 'Изменить', onClick: onEdit }} />
 
       <section className="rounded-3xl px-5 py-5 text-white" style={{ backgroundColor: KIND_COLORS[loan.kind] }}>
         <span className="text-[13px] opacity-80">
@@ -426,37 +427,3 @@ function Progress({ value, color }: { value: number; color: string }) {
   )
 }
 
-function Header({
-  title,
-  onBack,
-  action,
-}: {
-  title: string
-  onBack: () => void
-  action?: { label: string; onClick: () => void }
-}) {
-  return (
-    <header className="flex items-center gap-3 py-4">
-      <button
-        onClick={onBack}
-        aria-label="Назад"
-        className="flex size-9 shrink-0 items-center justify-center rounded-full bg-surface transition-transform active:scale-90"
-      >
-        <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M15 5l-7 7 7 7" />
-        </svg>
-      </button>
-
-      <h1 className="min-w-0 flex-1 truncate text-[20px] font-bold tracking-tight">{title}</h1>
-
-      {action && (
-        <button
-          onClick={action.onClick}
-          className="shrink-0 text-[15px] font-medium text-brand transition-transform active:scale-95"
-        >
-          {action.label}
-        </button>
-      )}
-    </header>
-  )
-}
