@@ -42,7 +42,7 @@ export function AssetsCard({
         <Tile
           icon="car"
           color={CAR_COLOR}
-          title="Машина"
+          title="Машины"
           lines={vehicleLines(vehicles, due?.due)}
           empty={vehicles.length === 0}
           alert={due?.due.overdue ? 'Пора в сервис' : undefined}
@@ -72,12 +72,9 @@ export function AssetsCard({
 function vehicleLines(vehicles: Vehicle[], due: ServiceDue | undefined): string[] {
   if (vehicles.length === 0) return ['Журнал обслуживания']
 
-  const first =
-    vehicles.length === 1
-      ? vehicles[0].title
-      : `${vehicles.length} ${plural(vehicles.length, 'машина', 'машины', 'машин')}`
-
-  return [first, dueShort(due)].filter(Boolean)
+  // Названиями, а не числом: «2 машины» под заголовком «Машины» — то же слово
+  // дважды, а «BMW 320i, Kia Rio» сразу говорит, о каких именно речь.
+  return [vehicles.map((vehicle) => vehicle.title).join(', '), dueShort(due)].filter(Boolean)
 }
 
 /** «Через 800 км» или «Через 12 дней» — то, что влезает во вторую строку плитки. */

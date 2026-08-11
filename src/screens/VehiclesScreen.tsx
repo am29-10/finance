@@ -25,11 +25,13 @@ interface VehiclesScreenProps {
 const CAR_COLOR = '#0891b2'
 
 /**
- * Машина — не финансовый раздел, а журнал: что и когда с ней делали.
+ * Машины — не финансовый раздел, а журнал: что и когда с каждой делали.
  *
- * Одна машина открывается сразу, минуя список: держать между главной и
- * журналом экран с единственной строкой значит требовать лишнее нажатие
- * каждый раз. Список появляется, только когда машин действительно несколько.
+ * Раздел устроен списком, даже когда машина одна. Сначала единственная
+ * открывалась сразу, минуя список, — и второй машине неоткуда было взяться:
+ * кнопка «Добавить» живёт на списке, до которого стало не дойти. Машин у
+ * человека бывает столько же, сколько квартир, и раздел одинаково готов и
+ * к одной, и к трём.
  */
 export function VehiclesScreen({ onBack }: VehiclesScreenProps) {
   const data = useFinance()
@@ -37,8 +39,7 @@ export function VehiclesScreen({ onBack }: VehiclesScreenProps) {
   const [sheet, setSheet] = useState<{ vehicle?: Vehicle } | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  const only = data.vehicles.length === 1 ? data.vehicles[0] : undefined
-  const selected = openId ? vehicleById(data, openId) : only
+  const selected = openId ? vehicleById(data, openId) : undefined
 
   function openSheet(vehicle?: Vehicle) {
     setSheet({ vehicle })
@@ -55,7 +56,7 @@ export function VehiclesScreen({ onBack }: VehiclesScreenProps) {
       <>
         <VehicleDetail
           vehicle={selected}
-          onBack={() => (openId && !only ? setOpenId(null) : onBack())}
+          onBack={() => setOpenId(null)}
           onEdit={() => openSheet(selected)}
         />
         {sheet && (
@@ -73,22 +74,33 @@ export function VehiclesScreen({ onBack }: VehiclesScreenProps) {
 
   return (
     <div className="px-4 pb-8">
-      <ScreenHeader title="Машина" onBack={onBack} />
+      <ScreenHeader title="Машины" onBack={onBack} />
 
       {data.vehicles.length === 0 ? (
         <div className="mt-2 rounded-2xl bg-surface px-6 py-10 text-center">
-          <p className="text-[15px] font-medium">Машины пока нет</p>
+          <p className="text-[15px] font-medium">Машин пока нет</p>
           <p className="mx-auto mt-2 max-w-[280px] text-[14px] leading-snug text-muted">
             Добавьте машину — приложение будет помнить, что и когда с ней делали, и напомнит о
             следующей замене масла или ТО.
           </p>
         </div>
       ) : (
-        <div className="flex flex-col gap-2.5">
-          {data.vehicles.map((vehicle) => (
-            <VehicleRow key={vehicle.id} vehicle={vehicle} onClick={() => setOpenId(vehicle.id)} />
-          ))}
-        </div>
+        <>
+          <p className="mb-2 px-1 text-[13px] text-muted">
+            {data.vehicles.length}{' '}
+            {plural(data.vehicles.length, 'машина', 'машины', 'машин')}
+          </p>
+
+          <div className="flex flex-col gap-2.5">
+            {data.vehicles.map((vehicle) => (
+              <VehicleRow
+                key={vehicle.id}
+                vehicle={vehicle}
+                onClick={() => setOpenId(vehicle.id)}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       <button
