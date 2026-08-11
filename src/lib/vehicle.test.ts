@@ -51,16 +51,22 @@ describe('пробег', () => {
     expect(parseKm('99999999')).toBeNull()
   })
 
-  it('берёт самую свежую отметку, если в карточке число меньше', () => {
-    // В сервисе записали 87 000, а в карточке с прошлого года 84 300:
-    // показывать надо большее, иначе напоминание сработает не вовремя.
-    const car = vehicle({ mileage: 84_300, records: [record({ mileage: 87_000 })] })
+  it('берёт наибольшую отметку журнала, а не последнюю по дате', () => {
+    // Запись могли завести задним числом: «в мае меняли колодки на 84 300».
+    // Считать её сегодняшним пробегом значило бы отодвинуть все напоминания.
+    const car = vehicle({
+      records: [
+        record({ id: 'r1', date: '2026-08-02', mileage: 87_000 }),
+        record({ id: 'r2', date: '2026-05-15', mileage: 84_300, createdAt: '2026-08-03T00:00:00.000Z' }),
+      ],
+    })
 
     expect(currentMileage(car)).toBe(87_000)
   })
 
-  it('обходится без пробега вовсе', () => {
+  it('обходится без пробега вовсе: журнал пуст или пробег в нём не отмечали', () => {
     expect(currentMileage(vehicle())).toBeUndefined()
+    expect(currentMileage(vehicle({ records: [record()] }))).toBeUndefined()
   })
 })
 
@@ -118,13 +124,13 @@ describe('сколько стоило', () => {
 
 describe('напоминания', () => {
   it('не берёт записи без следующего срока', () => {
-    const car = vehicle({ mileage: 87_000, records: [record()] })
+    const car = vehicle({ records: [record({ mileage: 87_000 })] })
 
     expect(upcomingServices(car, '2026-08-11')).toEqual([])
   })
 
   it('считает срок наступившим, когда пробег добран', () => {
-    const car = vehicle({ mileage: 97_500, records: [record({ nextMileage: 97_000 })] })
+    const car = vehicle({ records: [record({ mileage: 97_500, nextMileage: 97_000 })] })
     const [due] = upcomingServices(car, '2026-08-11')
 
     expect(due.overdue).toBe(true)
@@ -132,7 +138,7 @@ describe('напоминания', () => {
   })
 
   it('предупреждает заранее, когда до срока меньше тысячи километров', () => {
-    const car = vehicle({ mileage: 96_500, records: [record({ nextMileage: 97_000 })] })
+    const car = vehicle({ records: [record({ mileage: 96_500, nextMileage: 97_000 })] })
     const [due] = upcomingServices(car, '2026-08-11')
 
     expect(due.overdue).toBe(false)
@@ -140,7 +146,7 @@ describe('напоминания', () => {
   })
 
   it('молчит, пока до срока далеко', () => {
-    const car = vehicle({ mileage: 87_000, records: [record({ nextMileage: 97_000 })] })
+    const car = vehicle({ records: [record({ mileage: 87_000, nextMileage: 97_000 })] })
     const [due] = upcomingServices(car, '2026-08-11')
 
     expect(due.overdue).toBe(false)
@@ -150,8 +156,7 @@ describe('напоминания', () => {
   it('срабатывает по дате, даже если по пробегу ещё рано', () => {
     // Страховку и ТО делают по календарю, и пробег их не отменяет.
     const car = vehicle({
-      mileage: 87_000,
-      records: [record({ nextMileage: 97_000, nextDate: '2026-08-01' })],
+      records: [record({ mileage: 87_000, nextMileage: 97_000, nextDate: '2026-08-01' })],
     })
 
     expect(upcomingServices(car, '2026-08-11')[0].overdue).toBe(true)
@@ -167,9 +172,8 @@ describe('напоминания', () => {
 
   it('ставит просроченное впереди близкого', () => {
     const car = vehicle({
-      mileage: 87_000,
       records: [
-        record({ id: 'далёкая', nextMileage: 120_000 }),
+        record({ id: 'далёкая', mileage: 87_000, nextMileage: 120_000 }),
         record({ id: 'просроченная', nextMileage: 80_000 }),
         record({ id: 'скорая', nextMileage: 87_500 }),
       ],
@@ -191,11 +195,13 @@ describe('напоминания', () => {
   })
 
   it('выбирает самое срочное среди всех машин', () => {
-    const first = vehicle({ id: 'v1', mileage: 87_000, records: [record({ nextMileage: 97_000 })] })
+    const first = vehicle({
+      id: 'v1',
+      records: [record({ mileage: 87_000, nextMileage: 97_000 })],
+    })
     const second = vehicle({
       id: 'v2',
-      mileage: 40_000,
-      records: [record({ id: 'r2', nextMileage: 39_000 })],
+      records: [record({ id: 'r2', mileage: 40_000, nextMileage: 39_000 })],
     })
 
     expect(nearestService([first, second], '2026-08-11')?.vehicle.id).toBe('v2')
@@ -207,10 +213,10 @@ describe('напоминания', () => {
 })
 
 describe('подпись машины', () => {
-  it('собирает год и пробег', () => {
-    const car = vehicle({ year: 2021, mileage: 87_420 })
+  it('собирает год и номер', () => {
+    const car = vehicle({ year: 2021, plate: 'А123ВС777' })
 
-    expect(plain(vehicleSubtitle(car))).toBe('2021 год · 87 420 км')
+    expect(vehicleSubtitle(car)).toBe('2021 год · А123ВС777')
   })
 
   it('показывает номер, когда больше сказать нечего', () => {

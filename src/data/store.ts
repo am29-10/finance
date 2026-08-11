@@ -63,18 +63,6 @@ function newId(): string {
   return `o-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
-/**
- * Пробег машины после записи в журнал: он только растёт.
- *
- * Запись задним числом — «в мае меняли колодки на 84 300» — не должна
- * отматывать табло назад, поэтому меньшее число игнорируется.
- */
-function grownMileage(current: number | undefined, fromRecord: number | undefined): number | undefined {
-  if (fromRecord === undefined) return current
-  if (current === undefined) return fromRecord
-  return Math.max(current, fromRecord)
-}
-
 /* ── Кредиты и расходы ─────────────────────────────────────────────────── */
 
 /**
@@ -516,11 +504,8 @@ export const actions = {
   },
 
   /**
-   * Записать работы в журнал.
-   *
-   * Пробег из записи подтягивает текущий пробег машины, если он больше:
-   * человек только что ввёл число на табло — заставлять его вписать то же
-   * самое второй раз в карточку значит гарантированно получить расхождение.
+   * Записать работы в журнал. Пробег машины отдельно не хранится — он и есть
+   * наибольший из отмеченных здесь, см. `currentMileage`.
    */
   addService(vehicleId: string, input: Omit<ServiceRecord, 'id' | 'createdAt'>): void {
     const record: ServiceRecord = {
@@ -533,11 +518,7 @@ export const actions = {
       ...state,
       vehicles: state.vehicles.map((vehicle) =>
         vehicle.id === vehicleId
-          ? {
-              ...vehicle,
-              records: [...vehicle.records, record],
-              mileage: grownMileage(vehicle.mileage, record.mileage),
-            }
+          ? { ...vehicle, records: [...vehicle.records, record] }
           : vehicle,
       ),
     })
@@ -557,7 +538,6 @@ export const actions = {
               records: vehicle.records.map((record) =>
                 record.id === recordId ? { ...record, ...patch } : record,
               ),
-              mileage: grownMileage(vehicle.mileage, patch.mileage),
             }
           : vehicle,
       ),

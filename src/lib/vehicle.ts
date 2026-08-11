@@ -57,26 +57,22 @@ export function formatKmInput(raw: string): string {
 }
 
 /**
- * Сегодняшний пробег машины.
+ * Последний известный пробег — наибольший из отмеченных в журнале.
  *
- * Записанный человеком, но не меньше самой «свежей» записи журнала: пробег
- * только растёт, и если в сервисе отметили 87 000, то показывать 84 300,
- * забытые в карточке полгода назад, значит врать в обе стороны сразу —
- * и в карточке, и в напоминании о следующей замене.
+ * Наибольший, а не из свежей по дате записи: запись могли завести задним
+ * числом, и тогда «сегодняшним» стал бы пробег полугодовой давности, а
+ * напоминание о замене масла отодвинулось бы на те же полгода.
+ *
+ * Отдельного поля у машины нет намеренно — см. комментарий к Vehicle.
  */
 export function currentMileage(vehicle: Vehicle): number | undefined {
-  const fromRecords = vehicle.records.reduce<number | undefined>(
+  return vehicle.records.reduce<number | undefined>(
     (max, record) =>
       record.mileage !== undefined && (max === undefined || record.mileage > max)
         ? record.mileage
         : max,
     undefined,
   )
-
-  if (vehicle.mileage === undefined) return fromRecords
-  if (fromRecords === undefined) return vehicle.mileage
-
-  return Math.max(vehicle.mileage, fromRecords)
 }
 
 /* ── Журнал ────────────────────────────────────────────────────────────── */
@@ -221,16 +217,7 @@ export function nearestService(
   return rows.sort((a, b) => urgency(a.due) - urgency(b.due))[0]
 }
 
-/** «BMW 320i · 2021» — подпись машины в списке. */
+/** «2021 год · А123ВС777» — подпись машины в списке. */
 export function vehicleSubtitle(vehicle: Vehicle): string {
-  const parts: string[] = []
-
-  if (vehicle.year) parts.push(`${vehicle.year} год`)
-
-  const mileage = currentMileage(vehicle)
-  if (mileage !== undefined) parts.push(formatKm(mileage))
-
-  if (parts.length === 0 && vehicle.plate) parts.push(vehicle.plate)
-
-  return parts.join(' · ')
+  return [vehicle.year && `${vehicle.year} год`, vehicle.plate].filter(Boolean).join(' · ')
 }

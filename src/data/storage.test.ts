@@ -210,6 +210,17 @@ describe('migrate: старые базы', () => {
     expect(data.vehicles[0].records).toEqual([])
   })
 
+  it('выбрасывает пробег, который раньше хранился в карточке машины', () => {
+    // Его никто не читает: сегодняшний пробег берётся из записи журнала.
+    const data = migrate(
+      stored({
+        vehicles: [{ id: 'v1', title: 'BMW 320i', mileage: 87_420, records: [] } as never],
+      }),
+    )
+
+    expect(data.vehicles[0]).not.toHaveProperty('mileage')
+  })
+
   it('переносит настройки, подставляя недостающее', () => {
     const data = migrate(stored({ settings: { monthlyBudget: 50_000_00 } as never }))
 

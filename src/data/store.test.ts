@@ -14,6 +14,7 @@ import {
 } from './store'
 import { defaultCategories } from './categories'
 import { localStorageAdapter } from './storage'
+import { currentMileage } from '../lib/vehicle'
 import type { Account, FinanceData, Operation, Recurrence } from './types'
 
 function account(patch: Partial<Account> = {}): Account {
@@ -543,22 +544,16 @@ describe('actions: машина и её журнал', () => {
     expect(next.vehicles[0].records).toEqual([])
   })
 
-  it('подтягивает пробег из записи, если он вырос', () => {
+  it('хранит пробег в самой записи, а не в карточке машины', () => {
+    // Отдельного поля у машины нет: его правили бы раз в полгода, а показывали
+    // бы как сегодняшнее. Пробег отмечается там, где его и смотрят, — в журнале.
     const next = afterAction(data(), () => {
-      const car = actions.addVehicle({ title: 'BMW 320i', mileage: 84_300 })
+      const car = actions.addVehicle({ title: 'BMW 320i' })
       actions.addService(car.id, service)
     })
 
-    expect(next.vehicles[0].mileage).toBe(87_000)
-  })
-
-  it('не отматывает пробег назад записью задним числом', () => {
-    const next = afterAction(data(), () => {
-      const car = actions.addVehicle({ title: 'BMW 320i', mileage: 87_420 })
-      actions.addService(car.id, { ...service, date: '2026-05-15', mileage: 84_300 })
-    })
-
-    expect(next.vehicles[0].mileage).toBe(87_420)
+    expect(next.vehicles[0].records[0].mileage).toBe(87_000)
+    expect(currentMileage(next.vehicles[0])).toBe(87_000)
   })
 
   it('удаляет машину вместе с журналом', () => {

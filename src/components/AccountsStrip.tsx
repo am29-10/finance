@@ -55,8 +55,8 @@ export function AccountsStrip({ balances, missingRates, hidden, onOpen }: Accoun
         onClick={onOpen}
         className="mb-2 flex w-full items-baseline justify-between px-1 text-left"
       >
-        <span className="text-[15px] font-semibold">Где деньги</span>
-        <span className="text-[14px] font-medium text-brand">Счета</span>
+        {/* Заголовок и есть кнопка: подпись «Счета» справа повторяла его слово в слово. */}
+        <span className="text-[15px] font-semibold">Счета</span>
       </button>
 
       <div className="divide-y divide-line overflow-hidden rounded-2xl bg-surface">

@@ -4,7 +4,6 @@ import { Field } from './Field'
 import { actions } from '../data/store'
 import type { Vehicle } from '../data/types'
 import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
-import { formatKmInput, parseKm } from '../lib/vehicle'
 
 interface VehicleSheetProps {
   open: boolean
@@ -26,9 +25,6 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
 
   const [title, setTitle] = useState(vehicle?.title ?? '')
   const [year, setYear] = useState(vehicle?.year ? String(vehicle.year) : '')
-  const [mileage, setMileage] = useState(
-    vehicle?.mileage === undefined ? '' : formatKmInput(String(vehicle.mileage)),
-  )
   const [price, setPrice] = useState(vehicle?.price ? toAmountInput(vehicle.price) : '')
   const [plate, setPlate] = useState(vehicle?.plate ?? '')
   const [vin, setVin] = useState(vehicle?.vin ?? '')
@@ -42,7 +38,6 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
     const payload = {
       title: title.trim(),
       year: parseYear(year),
-      mileage: parseKm(mileage) ?? undefined,
       price: parseAmount(price) ?? undefined,
       plate: plate.trim() || undefined,
       vin: vin.trim() || undefined,
@@ -80,35 +75,20 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
           />
         </Field>
 
-        {/* Доли, а не пиксели: на узком экране жёсткая ширина не помещалась в строку. */}
-        <div className="flex gap-3">
-          <div className="min-w-0 flex-1">
-            <Field label="Год">
-              <input
-                value={year}
-                onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                inputMode="numeric"
-                placeholder="2021"
-                className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
-              />
-            </Field>
-          </div>
-
-          <div className="min-w-0 flex-[1.5]">
-            <Field label="Текущий пробег">
-              <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
-                <input
-                  value={mileage}
-                  onChange={(e) => setMileage(formatKmInput(e.target.value))}
-                  inputMode="numeric"
-                  placeholder="87 420"
-                  className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
-                />
-                <span className="text-[15px] text-muted">км</span>
-              </div>
-            </Field>
-          </div>
-        </div>
+        {/*
+          Пробега здесь нет: отдельное число пришлось бы править каждую неделю,
+          а правили бы его раз в полгода. Сегодняшним считается пробег из
+          последней записи журнала — он вводится там, где его и так смотрят.
+        */}
+        <Field label="Год выпуска">
+          <input
+            value={year}
+            onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            inputMode="numeric"
+            placeholder="2021"
+            className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+          />
+        </Field>
 
         <Field
           label="Стоимость"

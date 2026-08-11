@@ -9,7 +9,6 @@ import { formatDayHeading, formatFullDate } from '../lib/date'
 import { formatMoney } from '../lib/money'
 import { plural } from '../lib/text'
 import {
-  currentMileage,
   formatKm,
   serviceKind,
   serviceSpending,
@@ -125,7 +124,7 @@ function VehicleRow({ vehicle, onClick }: { vehicle: Vehicle; onClick: () => voi
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-semibold">{vehicle.title}</p>
           <p className="mt-0.5 truncate text-[13px] text-muted">
-            {vehicleSubtitle(vehicle) || 'Пробег не указан'}
+            {vehicleSubtitle(vehicle) || 'Журнал обслуживания'}
           </p>
         </div>
 
@@ -154,7 +153,6 @@ function VehicleDetail({
   const [sheet, setSheet] = useState<{ record?: ServiceRecord } | null>(null)
   const [sheetOpen, setSheetOpen] = useState(false)
 
-  const mileage = currentMileage(vehicle)
   const records = sortedRecords(vehicle)
   const due = upcomingServices(vehicle)
   const spending = serviceSpending(vehicle)
@@ -177,10 +175,21 @@ function VehicleDetail({
         action={{ label: 'Изменить', onClick: onEdit }}
       />
 
+      {/*
+        Крупно — то, ради чего сюда заходят: сколько машина съела за год.
+        Пробега здесь нет: он живёт в записях журнала, где его и отмечают,
+        а отдельное число на экране устаревало бы к следующей заправке.
+      */}
       <section className="rounded-3xl px-5 py-5 text-white" style={{ backgroundColor: CAR_COLOR }}>
-        <span className="text-[13px] opacity-80">Текущий пробег</span>
+        <span className="text-[13px] opacity-80">
+          {spending.count > 0 ? 'Обслуживание за год' : 'Журнал обслуживания'}
+        </span>
         <p className="mt-1 text-[34px] font-bold tabular-nums">
-          {mileage === undefined ? 'не указан' : formatKm(mileage)}
+          {spending.count > 0
+            ? formatMoney(spending.lastYear)
+            : records.length > 0
+              ? `${records.length} ${plural(records.length, 'запись', 'записи', 'записей')}`
+              : 'Пока пусто'}
         </p>
 
         <p className="mt-2 text-[13px] opacity-80">

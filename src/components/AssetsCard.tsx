@@ -143,14 +143,16 @@ function Tile({
       onClick={onClick}
       className="min-w-0 flex-1 rounded-2xl bg-surface px-4 py-4 text-left transition-transform active:scale-[0.99]"
     >
-      <div className="flex items-center gap-2.5">
-        <CategoryIcon icon={icon} color={color} size={32} />
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</span>
-      </div>
+      {/*
+        Значок над названием, а не слева от него: рядом со значком на
+        половину экрана остаётся меньше сотни точек, и «Недвижимость» в них
+        не помещалась — слово обрывалось многоточием на каждом телефоне.
+      */}
+      <CategoryIcon icon={icon} color={color} size={32} />
 
-      <p className={`mt-2.5 truncate text-[14px] ${empty ? 'text-muted' : 'font-medium'}`}>
-        {lines[0]}
-      </p>
+      <p className="mt-2.5 text-[15px] font-semibold">{title}</p>
+
+      <p className={`mt-1 truncate text-[14px] ${empty ? 'text-muted' : ''}`}>{lines[0]}</p>
 
       {alert ? (
         <p className="mt-0.5 truncate text-[12px] font-medium" style={{ color: 'var(--color-danger)' }}>

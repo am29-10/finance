@@ -86,7 +86,7 @@ export function migrate(data: FinanceData): FinanceData {
     // v3 → v4: появились повторяющиеся операции; у старых баз правил нет.
     recurrences: mergeCategories(data.recurrences ?? []),
     // v5 → v6: появились машины и недвижимость.
-    vehicles: (data.vehicles ?? []).map(withRecords),
+    vehicles: (data.vehicles ?? []).map(cleanVehicle),
     properties: data.properties ?? [],
     settings: { ...DEFAULT_SETTINGS, ...data.settings, rates: data.settings?.rates ?? {} },
   }
@@ -198,12 +198,21 @@ function mergeCategories<T extends { categoryId: string }>(items: T[]): T[] {
 }
 
 /**
- * Машина без журнала — машина с пустым журналом, а не с отсутствующим.
- * Экран перебирает `records` без оглядки, и одна запись, пришедшая из чужой
- * копии без этого поля, уронила бы его целиком.
+ * Приводит машину к нынешней модели.
+ *
+ * Машина без журнала — машина с пустым журналом, а не с отсутствующим: экран
+ * перебирает `records` без оглядки, и одна запись из чужой копии без этого
+ * поля уронила бы его целиком.
+ *
+ * Заодно выбрасывается пробег, который какое-то время хранился прямо в
+ * карточке. Его никто больше не читает — сегодняшним считается пробег из
+ * последней записи журнала, — а в резервную копию мёртвое поле уезжало бы
+ * и дальше.
  */
-function withRecords(vehicle: Vehicle): Vehicle {
-  return vehicle.records ? vehicle : { ...vehicle, records: [] }
+function cleanVehicle(vehicle: Vehicle): Vehicle {
+  const { mileage: _legacy, ...rest } = vehicle as Vehicle & { mileage?: number }
+
+  return rest.records ? rest : { ...rest, records: [] }
 }
 
 /** Убирает из списка категории, слитые с другими. */
