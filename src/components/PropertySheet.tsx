@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { Field, Segmented } from './Field'
+import { DateInput } from './DateInput'
 import { actions } from '../data/store'
 import type { Property, PropertyKind, PropertyPurpose } from '../data/types'
-import { formatFullDate } from '../lib/date'
 import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 import {
   hasFloor,
@@ -38,6 +38,8 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
   const [address, setAddress] = useState(property?.address ?? '')
   const [area, setArea] = useState(property?.area ? toAreaInput(property.area) : '')
   const [rooms, setRooms] = useState(property?.rooms ? String(property.rooms) : '')
+  // Ноль комнат — это студия, а не «комнат нет»: см. Property.rooms.
+  const [studio, setStudio] = useState(property?.rooms === 0)
   const [floor, setFloor] = useState(property?.floor ? String(property.floor) : '')
   const [price, setPrice] = useState(property?.price ? toAmountInput(property.price) : '')
   const [note, setNote] = useState(property?.note ?? '')
@@ -53,6 +55,8 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
 
   const canSave = title.trim().length > 0
   const renting = purpose === 'rent'
+  /** Студия — планировка квартиры; у дома и комнаты такого понятия нет. */
+  const canBeStudio = kind === 'flat'
 
   function handleSave() {
     if (!canSave) return
@@ -63,7 +67,9 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
       purpose,
       address: address.trim() || undefined,
       area: parseArea(area) ?? undefined,
-      rooms: parseCount(rooms, 50),
+      // Студия бывает у квартиры; сменили тип на дом — переключатель уже не
+      // показан, и сохранять по нему ноль комнат нельзя.
+      rooms: studio && canBeStudio ? 0 : parseCount(rooms, 50),
       floor: hasFloor(kind) ? parseCount(floor, 200) : undefined,
       price: parseAmount(price) ?? undefined,
       note: note.trim() || undefined,
@@ -129,7 +135,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
           />
         </Field>
 
-        <Field label="Адрес" optional>
+        <Field label="Адрес">
           <input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
@@ -138,9 +144,15 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
           />
         </Field>
 
+        {/*
+          Ширины долями, а не пикселями: на узком экране три поля с жёсткими
+          92 px переставали помещаться в строку и уезжали за край шторки.
+          min-w-0 обязателен — без него поле не даёт себя сжать ниже
+          собственного содержимого, и строка снова разъезжается.
+        */}
         <div className="flex gap-3">
-          <div className="min-w-0 flex-1">
-            <Field label="Площадь" optional>
+          <div className="min-w-0 flex-[1.3]">
+            <Field label="Площадь">
               <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
                 <input
                   value={area}
@@ -154,21 +166,23 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
             </Field>
           </div>
 
-          <div className="w-[92px]">
-            <Field label="Комнат" optional>
-              <input
-                value={rooms}
-                onChange={(e) => setRooms(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                inputMode="numeric"
-                placeholder="3"
-                className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
-              />
-            </Field>
-          </div>
+          {!studio && (
+            <div className="min-w-0 flex-1">
+              <Field label="Комнат">
+                <input
+                  value={rooms}
+                  onChange={(e) => setRooms(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                  inputMode="numeric"
+                  placeholder="3"
+                  className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+                />
+              </Field>
+            </div>
+          )}
 
           {hasFloor(kind) && (
-            <div className="w-[92px]">
-              <Field label="Этаж" optional>
+            <div className="min-w-0 flex-1">
+              <Field label="Этаж">
                 <input
                   value={floor}
                   onChange={(e) => setFloor(e.target.value.replace(/\D/g, '').slice(0, 3))}
@@ -181,9 +195,35 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
           )}
         </div>
 
+        {/*
+          Студия — не «одна комната» и не «ноль»: комнаты в ней не считают
+          вовсе. Поэтому это переключатель, а не число, и поле «Комнат» он
+          убирает: заполнять его в студии нечем.
+        */}
+        {canBeStudio && (
+          <button
+            onClick={() => {
+              setStudio(!studio)
+              if (!studio) setRooms('')
+            }}
+            className="-mt-2 flex w-fit items-center gap-2 rounded-full px-3.5 py-2 text-[14px] font-medium transition-all duration-200"
+            style={{
+              backgroundColor: studio ? '#2e7d6b14' : 'var(--color-surface)',
+              color: studio ? 'var(--color-brand)' : 'var(--color-muted)',
+            }}
+          >
+            <span
+              className="flex size-4 shrink-0 items-center justify-center rounded-full transition-all duration-200"
+              style={{
+                border: studio ? '5px solid var(--color-brand)' : '2px solid #d6dbe1',
+              }}
+            />
+            Студия
+          </button>
+        )}
+
         <Field
           label="Стоимость"
-          optional
           hint="За сколько купили или во сколько оцениваете сейчас. Справочно — в баланс не входит: приложение считает деньги, а не имущество."
         >
           <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
@@ -200,7 +240,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
 
         {renting ? (
           <>
-            <Field label="Арендатор" optional>
+            <Field label="Арендатор">
               <input
                 value={tenant}
                 onChange={(e) => setTenant(e.target.value)}
@@ -209,39 +249,29 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
               />
             </Field>
 
-            <div className="flex gap-3">
-              <div className="min-w-0 flex-1">
-                <Field label="Договор до" optional>
-                  <div className="relative">
-                    <input
-                      type="date"
-                      value={contractUntil}
-                      onChange={(e) => setContractUntil(e.target.value)}
-                      className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] outline-none"
-                    />
-                    <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center bg-surface pr-3 text-[15px]">
-                      {contractUntil ? (
-                        formatFullDate(contractUntil).replace(/ г\.$/, '')
-                      ) : (
-                        <span className="text-muted">Не выбрана</span>
-                      )}
-                    </span>
-                  </div>
-                </Field>
-              </div>
+            {/*
+              Дата и число рядом не встают: у поля с календарём есть своя
+              минимальная ширина, которую браузер не даёт сжать, и в паре с
+              соседом строка выезжала за край шторки. Поэтому каждое поле
+              занимает всю ширину — как и дата в остальных формах.
+            */}
+            <Field label="Договор до">
+              <DateInput
+                value={contractUntil}
+                onChange={setContractUntil}
+                placeholder="Не выбрана"
+              />
+            </Field>
 
-              <div className="w-[112px]">
-                <Field label="День оплаты" optional>
-                  <input
-                    value={rentDay}
-                    onChange={(e) => setRentDay(e.target.value.replace(/\D/g, '').slice(0, 2))}
-                    inputMode="numeric"
-                    placeholder="10"
-                    className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
-                  />
-                </Field>
-              </div>
-            </div>
+            <Field label="День оплаты" hint="Число месяца, когда приходит аренда.">
+              <input
+                value={rentDay}
+                onChange={(e) => setRentDay(e.target.value.replace(/\D/g, '').slice(0, 2))}
+                inputMode="numeric"
+                placeholder="10"
+                className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+              />
+            </Field>
 
             <p className="-mt-1 px-1 text-[12px] leading-snug text-muted">
               Сумма аренды здесь не нужна: полученные деньги заносятся в операции как доход в
@@ -250,7 +280,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
             </p>
           </>
         ) : (
-          <Field label="Год ремонта" optional>
+          <Field label="Год ремонта">
             <input
               value={renovationYear}
               onChange={(e) => setRenovationYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -261,7 +291,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
           </Field>
         )}
 
-        <Field label="Комментарий" optional>
+        <Field label="Комментарий">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}

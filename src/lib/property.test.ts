@@ -3,6 +3,7 @@ import type { Property } from '../data/types'
 import {
   areasLine,
   formatArea,
+  formatRooms,
   isContractOver,
   nearestRent,
   nextRentDate,
@@ -68,6 +69,15 @@ describe('подпись объекта', () => {
   it('согласует слово «комната» с числом', () => {
     expect(propertySubtitle(property({ rooms: 1 }))).toBe('1 комната')
     expect(propertySubtitle(property({ rooms: 5 }))).toBe('5 комнат')
+  })
+
+  it('называет ноль комнат студией, а не нулём', () => {
+    expect(formatRooms(0)).toBe('Студия')
+    expect(propertySubtitle(property({ area: 280, rooms: 0 }))).toBe('28 м² · Студия')
+  })
+
+  it('молчит, когда комнаты не указаны — это не то же самое, что студия', () => {
+    expect(formatRooms(undefined)).toBe('')
   })
 })
 

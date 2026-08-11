@@ -378,7 +378,6 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
                     ? 'Остаток этого счёта изменится на сумму операции.'
                     : 'Без счёта операция попадёт в историю и в аналитику, но ничей остаток не тронет — так удобно вести общие траты, которые вы не разносите по картам.'
                 }
-                optional
               >
                 <AccountPicker
                   accounts={accounts}
@@ -482,7 +481,7 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
           </div>
         </Field>
 
-        <Field label="Комментарий" optional>
+        <Field label="Комментарий">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -499,7 +498,6 @@ export function OperationSheet({ open, operation, onClose, onAddAccount }: Opera
                 ? 'Приложение само заведёт такую же операцию в следующий срок. Сумму можно будет поправить — шаблон её не перезапишет.'
                 : undefined
             }
-            optional
           >
             <Segmented
               value={repeat ?? 'none'}

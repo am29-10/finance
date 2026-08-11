@@ -127,7 +127,20 @@ export function HomeScreen({
         onOpen={onOpenAccounts}
       />
 
-      <div className="mt-3">
+      {/*
+        Активы идут сразу за счетами: «где деньги» и «что есть» — соседние
+        вопросы. Бюджет и кредиты ниже — они уже про месяц, а не про имущество.
+      */}
+      <div className="mt-4">
+        <AssetsCard
+          vehicles={data.vehicles}
+          properties={data.properties}
+          onOpenVehicles={onOpenVehicles}
+          onOpenProperties={onOpenProperties}
+        />
+      </div>
+
+      <div className="mt-4">
         <BudgetCard
           budget={data.settings.monthlyBudget}
           spent={monthTotals.expense}
@@ -138,20 +151,6 @@ export function HomeScreen({
 
       <div className="mt-2.5">
         <LoansCard loans={data.loans} hidden={hidden} onOpen={onOpenLoans} />
-      </div>
-
-      {/*
-        Машина и недвижимость стоят после денежных карточек и до обзора: это
-        не финансовые разделы, в баланс они не входят и спорить с ним за
-        внимание не должны.
-      */}
-      <div className="mt-5">
-        <AssetsCard
-          vehicles={data.vehicles}
-          properties={data.properties}
-          onOpenVehicles={onOpenVehicles}
-          onOpenProperties={onOpenProperties}
-        />
       </div>
 
       <div className="mt-6 mb-3 flex items-center justify-between px-1">

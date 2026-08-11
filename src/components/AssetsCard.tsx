@@ -3,7 +3,7 @@ import type { DateKey, Property, Vehicle } from '../data/types'
 import { formatDayHeading, fromDateKey, todayKey } from '../lib/date'
 import { plural } from '../lib/text'
 import { areasLine, nearestRent } from '../lib/property'
-import { currentMileage, formatKm, nearestService } from '../lib/vehicle'
+import { formatKm, nearestService, type ServiceDue } from '../lib/vehicle'
 
 interface AssetsCardProps {
   vehicles: Vehicle[]
@@ -16,13 +16,15 @@ const CAR_COLOR = '#0891b2'
 const HOME_COLOR = '#0d9488'
 
 /**
- * «Мои активы» на главной — две плитки, за которыми лежат справочники вещей.
+ * «Активы» на главной — две плитки, за которыми лежат справочники вещей.
+ *
+ * Стоят сразу под счетами: «где деньги» и «что есть» — соседние вопросы, и
+ * отвечать на них лучше рядом, а бюджет с кредитами уже про месяц и планы.
  *
  * Ни машина, ни квартира в баланс не входят и входить не должны: приложение
  * считает деньги, а не имущество, и оценка квартиры, вбитая однажды, устарела
- * бы в тот же месяц. Плитки стоят на главной только затем, чтобы до этих
- * разделов было одно нажатие, — и потому показывают не стоимость, а то,
- * что человек про них помнит: пробег и площадь.
+ * бы в тот же месяц. Поэтому плитки показывают не стоимость, а то, о чём
+ * спрашивают: скоро ли в сервис и когда следующая аренда.
  */
 export function AssetsCard({
   vehicles,
@@ -34,14 +36,14 @@ export function AssetsCard({
 
   return (
     <section>
-      <h2 className="mb-2 px-1 text-[15px] font-semibold">Мои активы</h2>
+      <h2 className="mb-2 px-1 text-[15px] font-semibold">Активы</h2>
 
       <div className="flex gap-2.5">
         <Tile
           icon="car"
           color={CAR_COLOR}
           title="Машина"
-          lines={vehicleLines(vehicles)}
+          lines={vehicleLines(vehicles, due?.due)}
           empty={vehicles.length === 0}
           alert={due?.due.overdue ? 'Пора в сервис' : undefined}
           onClick={onOpenVehicles}
@@ -59,19 +61,36 @@ export function AssetsCard({
   )
 }
 
-/** Одна машина — её название и пробег; несколько — сколько их всего. */
-function vehicleLines(vehicles: Vehicle[]): string[] {
+/**
+ * Название машины и срок ближайшего обслуживания.
+ *
+ * Пробега здесь намеренно нет: он меняется каждый день, а вводят его раз в
+ * несколько месяцев — на главной висело бы число, устаревшее в тот же вечер.
+ * Срок до сервиса живёт по тому же пробегу, но отвечает на вопрос, который
+ * человек себе действительно задаёт.
+ */
+function vehicleLines(vehicles: Vehicle[], due: ServiceDue | undefined): string[] {
   if (vehicles.length === 0) return ['Журнал обслуживания']
 
-  if (vehicles.length === 1) {
-    const mileage = currentMileage(vehicles[0])
-    return [vehicles[0].title, mileage === undefined ? '' : formatKm(mileage)].filter(Boolean)
+  const first =
+    vehicles.length === 1
+      ? vehicles[0].title
+      : `${vehicles.length} ${plural(vehicles.length, 'машина', 'машины', 'машин')}`
+
+  return [first, dueShort(due)].filter(Boolean)
+}
+
+/** «Через 800 км» или «Через 12 дней» — то, что влезает во вторую строку плитки. */
+function dueShort(due: ServiceDue | undefined): string {
+  if (!due || due.overdue) return ''
+
+  if (due.kmLeft !== undefined && (due.daysLeft === undefined || due.kmLeft / 1000 <= due.daysLeft / 30)) {
+    return `Сервис через ${formatKm(due.kmLeft)}`
   }
 
-  return [
-    `${vehicles.length} ${plural(vehicles.length, 'машина', 'машины', 'машин')}`,
-    vehicles.map((vehicle) => vehicle.title).join(', '),
-  ]
+  if (due.daysLeft === undefined) return ''
+
+  return `Сервис через ${due.daysLeft} ${plural(due.daysLeft, 'день', 'дня', 'дней')}`
 }
 
 function propertyLines(properties: Property[]): string[] {

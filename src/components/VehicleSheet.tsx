@@ -80,9 +80,10 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
           />
         </Field>
 
+        {/* Доли, а не пиксели: на узком экране жёсткая ширина не помещалась в строку. */}
         <div className="flex gap-3">
-          <div className="w-[120px]">
-            <Field label="Год" optional>
+          <div className="min-w-0 flex-1">
+            <Field label="Год">
               <input
                 value={year}
                 onChange={(e) => setYear(e.target.value.replace(/\D/g, '').slice(0, 4))}
@@ -93,8 +94,8 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
             </Field>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <Field label="Текущий пробег" optional>
+          <div className="min-w-0 flex-[1.5]">
+            <Field label="Текущий пробег">
               <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
                 <input
                   value={mileage}
@@ -111,7 +112,6 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
 
         <Field
           label="Стоимость"
-          optional
           hint="За сколько купили. Справочно — в баланс не входит: машина дешевеет каждый год, а вбитая однажды сумма об этом не знает."
         >
           <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
@@ -126,7 +126,7 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
           </div>
         </Field>
 
-        <Field label="Госномер" optional>
+        <Field label="Госномер">
           <input
             value={plate}
             onChange={(e) => setPlate(e.target.value.toUpperCase())}
@@ -135,7 +135,7 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
           />
         </Field>
 
-        <Field label="VIN" optional hint="Пригодится при заказе деталей — чтобы не искать документы.">
+        <Field label="VIN" hint="Пригодится при заказе деталей — чтобы не искать документы.">
           <input
             value={vin}
             onChange={(e) => setVin(e.target.value.replace(/\s/g, '').toUpperCase().slice(0, 17))}

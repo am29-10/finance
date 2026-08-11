@@ -2,9 +2,10 @@ import { useState } from 'react'
 import { Sheet } from './Sheet'
 import { Field, ToggleRow } from './Field'
 import { CategoryIcon } from './CategoryIcon'
+import { DateInput } from './DateInput'
 import { actions } from '../data/store'
 import type { ServiceKind, ServiceRecord, Vehicle } from '../data/types'
-import { formatFullDate, todayKey } from '../lib/date'
+import { todayKey } from '../lib/date'
 import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 import { currentMileage, formatKmInput, parseKm, SERVICE_KINDS } from '../lib/vehicle'
 
@@ -143,20 +144,10 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
         </Field>
 
         <Field label="Дата">
-          <div className="relative">
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => e.target.value && setDate(e.target.value)}
-              className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] outline-none"
-            />
-            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center bg-surface pr-3 text-[17px]">
-              {formatFullDate(date)}
-            </span>
-          </div>
+          <DateInput value={date} onChange={setDate} />
         </Field>
 
-        <Field label="Пробег" optional>
+        <Field label="Пробег">
           <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
             <input
               value={mileage}
@@ -171,7 +162,6 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
 
         <Field
           label="Стоимость"
-          optional
           hint="Цена работ на тот момент. В расходы и баланс не попадёт — иначе одна и та же замена масла посчиталась бы дважды, здесь и в операции."
         >
           <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
@@ -186,7 +176,7 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
           </div>
         </Field>
 
-        <Field label="Комментарий" optional>
+        <Field label="Комментарий">
           <input
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -204,7 +194,7 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
 
         {remind && (
           <div className="flex flex-col gap-5">
-            <Field label="Следующий раз на пробеге" optional>
+            <Field label="Следующий раз на пробеге">
               <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
                 <input
                   value={nextMileage}
@@ -219,20 +209,9 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
 
             <Field
               label="Или к дате"
-              optional
               hint="Достаточно одного из двух. Если указаны оба — напомним по тому, что наступит раньше."
             >
-              <div className="relative">
-                <input
-                  type="date"
-                  value={nextDate}
-                  onChange={(e) => setNextDate(e.target.value)}
-                  className="w-full rounded-2xl bg-surface px-4 py-3.5 text-[17px] outline-none"
-                />
-                <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center bg-surface pr-3 text-[17px]">
-                  {nextDate ? formatFullDate(nextDate) : <span className="text-muted">Не выбрана</span>}
-                </span>
-              </div>
+              <DateInput value={nextDate} onChange={setNextDate} placeholder="Не выбрана" />
             </Field>
           </div>
         )}

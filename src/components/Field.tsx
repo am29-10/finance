@@ -1,18 +1,23 @@
 interface FieldProps {
   label: string
-  optional?: boolean
   /** Подсказка под полем: зачем оно и что будет, если ошибиться. */
   hint?: string
   children: React.ReactNode
 }
 
-/** Подпись над полем формы. Общая для всех шторок, чтобы отступы не разъезжались. */
-export function Field({ label, optional, hint, children }: FieldProps) {
+/**
+ * Подпись над полем формы. Общая для всех шторок, чтобы отступы не разъезжались.
+ *
+ * Пометки «необязательно» здесь нет: обязательных полей в формах почти нет, и
+ * приписка стояла у каждого второго, превращаясь в шум, сквозь который не
+ * читается сама подпись. Что поле можно пропустить, видно и так — кнопка
+ * «Сохранить» остаётся живой.
+ */
+export function Field({ label, hint, children }: FieldProps) {
   return (
     <div>
       <div className="mb-2 flex items-baseline gap-2 px-1">
         <span className="text-[13px] font-medium text-muted">{label}</span>
-        {optional && <span className="text-[11px] text-muted opacity-60">необязательно</span>}
       </div>
       {children}
       {hint && <p className="mt-2 px-1 text-[12px] leading-snug text-muted">{hint}</p>}

@@ -134,7 +134,7 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
         </Field>
 
         <div className="flex gap-3">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <Field label="Ставка в год">
               <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
                 <input
@@ -149,7 +149,7 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
             </Field>
           </div>
 
-          <div className="w-[104px]">
+          <div className="w-[104px] shrink-0">
             <Field label="День платежа">
               <input
                 value={paymentDay}
@@ -171,7 +171,7 @@ export function LoanSheet({ open, loan, onClose, onDeleted }: LoanSheetProps) {
               placeholder={termUnit === 'years' ? '20' : '36'}
               className="min-w-0 flex-1 rounded-2xl bg-surface px-4 py-3.5 text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
             />
-            <div className="w-[168px]">
+            <div className="w-[168px] shrink-0">
               <Segmented
                 value={termUnit}
                 options={[

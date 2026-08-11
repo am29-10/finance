@@ -10,6 +10,7 @@ import { plural } from '../lib/text'
 import {
   areasLine,
   formatArea,
+  formatRooms,
   isContractOver,
   nextRentDate,
   propertyPurpose,
@@ -210,13 +211,20 @@ function PropertyDetail({
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-2.5">
-        {property.price && (
+        {property.price !== undefined && (
           <Tile label="Стоимость" value={formatMoney(property.price)} hint="в баланс не входит" />
         )}
-        {property.rooms && <Tile label="Комнат" value={String(property.rooms)} />}
-        {property.floor && <Tile label="Этаж" value={String(property.floor)} />}
-        {property.area && <Tile label="Площадь" value={formatArea(property.area)} />}
-        {property.renovationYear && (
+        {/*
+          Сравнение с undefined, а не проверка на истинность: ноль комнат —
+          это студия, и короткое `property.rooms &&` вывело бы на экран
+          болтающийся ноль вместо плитки.
+        */}
+        {property.rooms !== undefined && (
+          <Tile label={property.rooms === 0 ? 'Планировка' : 'Комнат'} value={formatRooms(property.rooms)} />
+        )}
+        {property.floor !== undefined && <Tile label="Этаж" value={String(property.floor)} />}
+        {property.area !== undefined && <Tile label="Площадь" value={formatArea(property.area)} />}
+        {property.renovationYear !== undefined && (
           <Tile label="Ремонт" value={String(property.renovationYear)} />
         )}
       </div>

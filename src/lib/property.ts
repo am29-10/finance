@@ -81,12 +81,21 @@ export function propertySubtitle(property: Property): string {
   const parts: string[] = []
 
   if (property.area) parts.push(formatArea(property.area))
-  if (property.rooms) {
-    parts.push(`${property.rooms} ${plural(property.rooms, 'комната', 'комнаты', 'комнат')}`)
-  }
+
+  const rooms = formatRooms(property.rooms)
+  if (rooms) parts.push(rooms)
+
   if (property.address) parts.push(property.address)
 
   return parts.join(' · ')
+}
+
+/** «3 комнаты» либо «Студия». Пусто, если комнаты не указаны. */
+export function formatRooms(rooms: number | undefined): string {
+  if (rooms === undefined) return ''
+  if (rooms === 0) return 'Студия'
+
+  return `${rooms} ${plural(rooms, 'комната', 'комнаты', 'комнат')}`
 }
 
 /** «62 м² + 45 м²» для двух-трёх объектов и «107 м²» для большего числа. */
