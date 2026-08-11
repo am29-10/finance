@@ -5,6 +5,7 @@ import {
   formatKm,
   nearestService,
   parseKm,
+  serviceSpending,
   sortedRecords,
   upcomingServices,
   vehicleSubtitle,
@@ -78,6 +79,40 @@ describe('журнал', () => {
       'первая-за-день',
       'старая',
     ])
+  })
+})
+
+describe('сколько стоило', () => {
+  it('складывает цены работ и считает, сколько из них за последний год', () => {
+    const car = vehicle({
+      records: [
+        record({ id: 'r1', date: '2026-08-02', cost: 450_000 }),
+        record({ id: 'r2', date: '2026-02-10', cost: 1_200_000 }),
+        record({ id: 'r3', date: '2024-05-15', cost: 800_000 }),
+      ],
+    })
+
+    const spending = serviceSpending(car, '2026-08-11')
+
+    expect(spending.total).toBe(2_450_000)
+    expect(spending.lastYear).toBe(1_650_000)
+    expect(spending.count).toBe(3)
+  })
+
+  it('не считает записи без цены — вспоминать сумму трёхлетней давности незачем', () => {
+    const car = vehicle({
+      records: [record({ id: 'r1', cost: 450_000 }), record({ id: 'r2' })],
+    })
+
+    expect(serviceSpending(car, '2026-08-11')).toEqual({
+      total: 450_000,
+      lastYear: 450_000,
+      count: 1,
+    })
+  })
+
+  it('на пустом журнале даёт нули, а не пустоту', () => {
+    expect(serviceSpending(vehicle(), '2026-08-11')).toEqual({ total: 0, lastYear: 0, count: 0 })
   })
 })
 

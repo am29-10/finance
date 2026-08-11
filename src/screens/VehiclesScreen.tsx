@@ -6,11 +6,13 @@ import { ServiceSheet } from '../components/ServiceSheet'
 import { useFinance, vehicleById } from '../data/store'
 import type { ServiceRecord, Vehicle } from '../data/types'
 import { formatDayHeading, formatFullDate } from '../lib/date'
+import { formatMoney } from '../lib/money'
 import { plural } from '../lib/text'
 import {
   currentMileage,
   formatKm,
   serviceKind,
+  serviceSpending,
   sortedRecords,
   upcomingServices,
   vehicleSubtitle,
@@ -155,6 +157,7 @@ function VehicleDetail({
   const mileage = currentMileage(vehicle)
   const records = sortedRecords(vehicle)
   const due = upcomingServices(vehicle)
+  const spending = serviceSpending(vehicle)
 
   function openSheet(record?: ServiceRecord) {
     setSheet({ record })
@@ -186,6 +189,23 @@ function VehicleDetail({
             .join(' · ') || 'Год, номер и VIN — по кнопке «Изменить»'}
         </p>
       </section>
+
+      {(vehicle.price || spending.count > 0) && (
+        <div className="mt-3 grid grid-cols-2 gap-2.5">
+          {vehicle.price && <Tile label="Стоимость машины" value={formatMoney(vehicle.price)} />}
+          {spending.count > 0 && (
+            <Tile
+              label="Обслуживание за год"
+              value={formatMoney(spending.lastYear)}
+              hint={
+                spending.total > spending.lastYear
+                  ? `всего по журналу ${formatMoney(spending.total)}`
+                  : undefined
+              }
+            />
+          )}
+        </div>
+      )}
 
       {due.length > 0 && (
         <div className="mt-3 flex flex-col gap-2.5">
@@ -220,7 +240,8 @@ function VehicleDetail({
       {records.length > 0 && (
         <p className="mt-3 px-1 text-[13px] leading-relaxed text-muted">
           {records.length} {plural(records.length, 'запись', 'записи', 'записей')} в журнале.
-          Сколько это стоило, приложение не спрашивает — расходы на машину живут в операциях.
+          Цены здесь справочные: в баланс и расходы они не идут — сам расход на сервис заносится
+          в операции.
         </p>
       )}
 
@@ -313,11 +334,27 @@ function RecordRow({ record, onClick }: { record: ServiceRecord; onClick: () => 
         </p>
       </div>
 
-      {record.mileage !== undefined && (
-        <span className="shrink-0 text-[13px] tabular-nums text-muted">
-          {formatKm(record.mileage)}
-        </span>
+      {/* Цена — то, что ищут глазами в истории; пробег под ней уточняет, когда это было. */}
+      {(record.cost || record.mileage !== undefined) && (
+        <div className="shrink-0 text-right">
+          {record.cost ? (
+            <p className="text-[15px] font-semibold tabular-nums">{formatMoney(record.cost)}</p>
+          ) : null}
+          {record.mileage !== undefined && (
+            <p className="mt-0.5 text-[12px] tabular-nums text-muted">{formatKm(record.mileage)}</p>
+          )}
+        </div>
       )}
     </button>
+  )
+}
+
+function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  return (
+    <div className="rounded-2xl bg-surface px-4 py-3.5">
+      <p className="text-[12px] leading-snug text-muted">{label}</p>
+      <p className="mt-1 text-[17px] font-semibold tabular-nums">{value}</p>
+      {hint && <p className="mt-0.5 text-[11px] text-muted">{hint}</p>}
+    </div>
   )
 }

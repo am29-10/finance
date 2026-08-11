@@ -582,6 +582,24 @@ describe('actions: машина и её журнал', () => {
     expect(next.vehicles[0].records.map((r) => r.title)).toEqual(['Тормозные колодки'])
   })
 
+  it('не двигает баланс ценой машины и стоимостью работ', () => {
+    // Цены в журнале справочные: расход на сервис человек заносит операцией,
+    // и второй раз тех же денег в балансе быть не должно.
+    const next = afterAction(data({ accounts: [account({ initialBalance: 100_000 })] }), () => {
+      const car = actions.addVehicle({ title: 'BMW 320i', price: 235_000_000 })
+      actions.addService(car.id, { ...service, cost: 450_000 })
+      actions.addProperty({
+        title: 'Квартира',
+        kind: 'flat',
+        purpose: 'living',
+        price: 980_000_000,
+      })
+    })
+
+    expect(accountBalance(next, 'a1')).toBe(100_000)
+    expect(next.operations).toEqual([])
+  })
+
   it('оставляет машины и объекты при очистке истории операций', () => {
     // Журнал обслуживания — не операции: стирая расходы, человек не просил
     // забыть, что он менял масло.

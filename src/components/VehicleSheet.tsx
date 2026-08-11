@@ -3,6 +3,7 @@ import { Sheet } from './Sheet'
 import { Field } from './Field'
 import { actions } from '../data/store'
 import type { Vehicle } from '../data/types'
+import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 import { formatKmInput, parseKm } from '../lib/vehicle'
 
 interface VehicleSheetProps {
@@ -28,6 +29,7 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
   const [mileage, setMileage] = useState(
     vehicle?.mileage === undefined ? '' : formatKmInput(String(vehicle.mileage)),
   )
+  const [price, setPrice] = useState(vehicle?.price ? toAmountInput(vehicle.price) : '')
   const [plate, setPlate] = useState(vehicle?.plate ?? '')
   const [vin, setVin] = useState(vehicle?.vin ?? '')
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -41,6 +43,7 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
       title: title.trim(),
       year: parseYear(year),
       mileage: parseKm(mileage) ?? undefined,
+      price: parseAmount(price) ?? undefined,
       plate: plate.trim() || undefined,
       vin: vin.trim() || undefined,
     }
@@ -105,6 +108,23 @@ export function VehicleSheet({ open, vehicle, onClose, onDeleted }: VehicleSheet
             </Field>
           </div>
         </div>
+
+        <Field
+          label="Стоимость"
+          optional
+          hint="За сколько купили. Справочно — в баланс не входит: машина дешевеет каждый год, а вбитая однажды сумма об этом не знает."
+        >
+          <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
+            <input
+              value={price}
+              onChange={(e) => setPrice(formatAmountInput(e.target.value))}
+              inputMode="numeric"
+              placeholder="2 350 000"
+              className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+            />
+            <span className="text-[15px] text-muted">₽</span>
+          </div>
+        </Field>
 
         <Field label="Госномер" optional>
           <input

@@ -4,6 +4,7 @@ import { Field, Segmented } from './Field'
 import { actions } from '../data/store'
 import type { Property, PropertyKind, PropertyPurpose } from '../data/types'
 import { formatFullDate } from '../lib/date'
+import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 import {
   hasFloor,
   parseArea,
@@ -38,6 +39,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
   const [area, setArea] = useState(property?.area ? toAreaInput(property.area) : '')
   const [rooms, setRooms] = useState(property?.rooms ? String(property.rooms) : '')
   const [floor, setFloor] = useState(property?.floor ? String(property.floor) : '')
+  const [price, setPrice] = useState(property?.price ? toAmountInput(property.price) : '')
   const [note, setNote] = useState(property?.note ?? '')
 
   const [tenant, setTenant] = useState(property?.tenant ?? '')
@@ -63,6 +65,7 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
       area: parseArea(area) ?? undefined,
       rooms: parseCount(rooms, 50),
       floor: hasFloor(kind) ? parseCount(floor, 200) : undefined,
+      price: parseAmount(price) ?? undefined,
       note: note.trim() || undefined,
       // Поля аренды храним только у сдаваемого: сняли квартиру с аренды —
       // прежний арендатор не должен всплыть через год как действующий.
@@ -177,6 +180,23 @@ export function PropertySheet({ open, property, onClose, onDeleted }: PropertySh
             </div>
           )}
         </div>
+
+        <Field
+          label="Стоимость"
+          optional
+          hint="За сколько купили или во сколько оцениваете сейчас. Справочно — в баланс не входит: приложение считает деньги, а не имущество."
+        >
+          <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
+            <input
+              value={price}
+              onChange={(e) => setPrice(formatAmountInput(e.target.value))}
+              inputMode="numeric"
+              placeholder="9 800 000"
+              className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+            />
+            <span className="text-[15px] text-muted">₽</span>
+          </div>
+        </Field>
 
         {renting ? (
           <>

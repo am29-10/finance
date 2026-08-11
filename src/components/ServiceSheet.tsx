@@ -5,6 +5,7 @@ import { CategoryIcon } from './CategoryIcon'
 import { actions } from '../data/store'
 import type { ServiceKind, ServiceRecord, Vehicle } from '../data/types'
 import { formatFullDate, todayKey } from '../lib/date'
+import { formatAmountInput, parseAmount, toAmountInput } from '../lib/money'
 import { currentMileage, formatKmInput, parseKm, SERVICE_KINDS } from '../lib/vehicle'
 
 interface ServiceSheetProps {
@@ -45,6 +46,7 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
     const current = currentMileage(vehicle)
     return current === undefined ? '' : formatKmInput(String(current))
   })
+  const [cost, setCost] = useState(record?.cost ? toAmountInput(record.cost) : '')
   const [note, setNote] = useState(record?.note ?? '')
 
   const [remind, setRemind] = useState(Boolean(record?.nextMileage || record?.nextDate))
@@ -81,6 +83,7 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
       title: finalTitle,
       date,
       mileage: parseKm(mileage) ?? undefined,
+      cost: parseAmount(cost) ?? undefined,
       note: note.trim() || undefined,
       nextMileage: remind ? (parseKm(nextMileage) ?? undefined) : undefined,
       nextDate: remind && nextDate ? nextDate : undefined,
@@ -166,6 +169,23 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
           </div>
         </Field>
 
+        <Field
+          label="Стоимость"
+          optional
+          hint="Цена работ на тот момент. В расходы и баланс не попадёт — иначе одна и та же замена масла посчиталась бы дважды, здесь и в операции."
+        >
+          <div className="flex items-baseline gap-1.5 rounded-2xl bg-surface px-4 py-3.5">
+            <input
+              value={cost}
+              onChange={(e) => setCost(formatAmountInput(e.target.value))}
+              inputMode="numeric"
+              placeholder="4 500"
+              className="min-w-0 flex-1 bg-transparent text-[17px] font-semibold tabular-nums outline-none placeholder:text-muted"
+            />
+            <span className="text-[15px] text-muted">₽</span>
+          </div>
+        </Field>
+
         <Field label="Комментарий" optional>
           <input
             value={note}
@@ -218,8 +238,9 @@ export function ServiceSheet({ open, vehicle, record, onClose }: ServiceSheetPro
         )}
 
         <p className="px-1 text-[12px] leading-snug text-muted">
-          Стоимость здесь не нужна — она уже записана в операциях. Журнал помнит только, что и
-          когда делали. Пробег в карточке машины подтянется сам, если станет больше нынешнего.
+          Журнал помнит, что и когда делали и во сколько это обошлось, но деньгами не заведует:
+          сам расход заносится в операции. Пробег в карточке машины подтянется сам, если станет
+          больше нынешнего.
         </p>
 
         <button

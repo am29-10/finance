@@ -8,7 +8,7 @@
  */
 
 import type { DateKey, ServiceKind, ServiceRecord, Vehicle } from '../data/types'
-import { fromDateKey, todayKey } from './date'
+import { fromDateKey, toDateKey, todayKey } from './date'
 
 export const SERVICE_KINDS: Array<{
   value: ServiceKind
@@ -87,6 +87,47 @@ export function sortedRecords(vehicle: Vehicle): ServiceRecord[] {
     if (a.date !== b.date) return a.date < b.date ? 1 : -1
     return a.createdAt < b.createdAt ? 1 : -1
   })
+}
+
+/* ── Сколько стоило ────────────────────────────────────────────────────── */
+
+export interface ServiceSpending {
+  /** Сумма всех записей с ценой, в копейках. */
+  total: number
+  /** Из них за последние двенадцать месяцев. */
+  lastYear: number
+  /** Сколько записей с ценой. Без этого числа сумма ни о чём не говорит. */
+  count: number
+}
+
+/**
+ * Во сколько обошлось содержание машины по журналу.
+ *
+ * Считается по ценам, записанным в самих работах, и ни с каким остатком не
+ * связано: это ответ на вопрос «сколько я в неё вложил», а не строка расхода.
+ * Записи без цены просто не участвуют — заставлять вспоминать сумму
+ * трёхлетней давности ради ровного итога незачем.
+ *
+ * Год отсчитывается от сегодня назад, а не с января: «за год» — это
+ * последние двенадцать месяцев, а не две недели, если сейчас середина января.
+ */
+export function serviceSpending(vehicle: Vehicle, today: DateKey = todayKey()): ServiceSpending {
+  const now = fromDateKey(today)
+  const cutoff = toDateKey(new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()))
+
+  let total = 0
+  let lastYear = 0
+  let count = 0
+
+  for (const record of vehicle.records) {
+    if (!record.cost) continue
+
+    total += record.cost
+    count += 1
+    if (record.date > cutoff) lastYear += record.cost
+  }
+
+  return { total, lastYear, count }
 }
 
 /* ── Напоминания ───────────────────────────────────────────────────────── */

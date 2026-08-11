@@ -5,6 +5,7 @@ import { PropertySheet } from '../components/PropertySheet'
 import { propertyById, useFinance } from '../data/store'
 import type { Property } from '../data/types'
 import { formatDayHeading, formatFullDate } from '../lib/date'
+import { formatMoney } from '../lib/money'
 import { plural } from '../lib/text'
 import {
   areasLine,
@@ -209,6 +210,9 @@ function PropertyDetail({
       )}
 
       <div className="mt-3 grid grid-cols-2 gap-2.5">
+        {property.price && (
+          <Tile label="Стоимость" value={formatMoney(property.price)} hint="в баланс не входит" />
+        )}
         {property.rooms && <Tile label="Комнат" value={String(property.rooms)} />}
         {property.floor && <Tile label="Этаж" value={String(property.floor)} />}
         {property.area && <Tile label="Площадь" value={formatArea(property.area)} />}
@@ -237,11 +241,12 @@ function Row({ label, value, tone }: { label: string; value: string; tone?: stri
   )
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-2xl bg-surface px-4 py-3.5">
       <p className="text-[12px] leading-snug text-muted">{label}</p>
       <p className="mt-1 text-[17px] font-semibold tabular-nums">{value}</p>
+      {hint && <p className="mt-0.5 text-[11px] text-muted">{hint}</p>}
     </div>
   )
 }
