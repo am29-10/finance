@@ -287,6 +287,26 @@ describe('migrate: слияние категорий', () => {
 
     expect(data.categories.find((c) => c.id === 'cafe')?.title).toBe('Кафе и рестораны')
   })
+
+  it('переносит интернет и телефон в коммунальные', () => {
+    const legacy = stored({
+      categories: [
+        ...defaultCategories(),
+        { id: 'internet', title: 'Интернет', type: 'expense' as const, icon: 'wifi', color: '#0ea5e9' },
+        { id: 'phone', title: 'Телефон', type: 'expense' as const, icon: 'phone', color: '#3b82f6' },
+      ],
+      operations: [
+        operation({ id: 'o1', categoryId: 'internet' }),
+        operation({ id: 'o2', categoryId: 'phone' }),
+      ],
+    })
+
+    const data = migrate(legacy)
+
+    expect(data.operations.map((o) => o.categoryId)).toEqual(['utilities', 'utilities'])
+    expect(data.categories.some((c) => c.id === 'internet' || c.id === 'phone')).toBe(false)
+    expect(data.categories.find((c) => c.id === 'utilities')?.title).toBe('ЖКХ, связь, интернет')
+  })
 })
 
 describe('migrate: цвета категорий', () => {
