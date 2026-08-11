@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8">
+<body style="margin:0">
+<div id="out"></div>
+<script>
+const font = '-apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, "Segoe UI", Roboto, system-ui, sans-serif'
+function w(text, size, weight, tracking) {
+  const s = document.createElement('span')
+  s.style.cssText = `position:absolute;white-space:nowrap;font-family:${font};font-size:${size}px;font-weight:${weight};letter-spacing:${tracking}`
+  s.textContent = text
+  document.body.appendChild(s)
+  const width = s.getBoundingClientRect().width
+  s.remove()
+  return Math.round(width * 10) / 10
+}
+const rows = []
+for (const screen of [320, 375, 390, 430]) {
+  const tile = (screen - 32 - 10) / 2
+  const budget = tile - 28 - 28 - 8 // px-3.5 с двух сторон, значок 28, зазор 8
+  rows.push(`${screen}px → плитка ${tile}, под текст ${budget.toFixed(1)}`)
+}
+rows.push('Недвижимость 15px/600/-0.025em: ' + w('Недвижимость', 15, 600, '-0.025em'))
+rows.push('Недвижимость 15px/600/0: ' + w('Недвижимость', 15, 600, '0'))
+rows.push('Машина 15px/600/-0.025em: ' + w('Машина', 15, 600, '-0.025em'))
+document.getElementById('out').textContent = rows.join(' | ')
+</script>

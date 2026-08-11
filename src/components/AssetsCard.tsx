@@ -141,18 +141,24 @@ function Tile({
   return (
     <button
       onClick={onClick}
-      className="min-w-0 flex-1 rounded-2xl bg-surface px-4 py-4 text-left transition-transform active:scale-[0.99]"
+      className="min-w-0 flex-1 rounded-2xl bg-surface px-3.5 py-4 text-left transition-transform active:scale-[0.99]"
     >
       {/*
-        Значок над названием, а не слева от него: рядом со значком на
-        половину экрана остаётся меньше сотни точек, и «Недвижимость» в них
-        не помещалась — слово обрывалось многоточием на каждом телефоне.
+        «Недвижимость» рядом со значком помещается впритык, и раньше слово
+        обрывалось многоточием. Значок поменьше, отступ плитки поуже и
+        поджатые межбуквенные просветы дают на узком экране (375 точек)
+        118 точек под название при нужных 103 — запас в шесть букв, которого
+        хватает и на шрифт пошире системного. Вернёте что-то одно — снова
+        оборвётся.
       */}
-      <CategoryIcon icon={icon} color={color} size={32} />
+      <div className="flex items-center gap-2">
+        <CategoryIcon icon={icon} color={color} size={28} />
+        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold tracking-tight">
+          {title}
+        </span>
+      </div>
 
-      <p className="mt-2.5 text-[15px] font-semibold">{title}</p>
-
-      <p className={`mt-1 truncate text-[14px] ${empty ? 'text-muted' : ''}`}>{lines[0]}</p>
+      <p className={`mt-2.5 truncate text-[14px] ${empty ? 'text-muted' : ''}`}>{lines[0]}</p>
 
       {alert ? (
         <p className="mt-0.5 truncate text-[12px] font-medium" style={{ color: 'var(--color-danger)' }}>
