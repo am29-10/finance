@@ -12,7 +12,8 @@
  * приложение и перезагружаем экран сами, как только новая версия готова.
  */
 export function watchForUpdates() {
-  // В APK обновляется сам APK, service worker там не нужен и не собирается.
+  // В установленном приложении обновляется сам файл — APK или IPA, — и service
+  // worker там не нужен: в сборке с режимом app он даже не создаётся.
   if (import.meta.env.MODE === 'app') return
   if (!('serviceWorker' in navigator)) return
 

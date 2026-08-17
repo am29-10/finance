@@ -19,6 +19,9 @@ const config: CapacitorConfig = {
     // Фон подложки под веб-слоем: без него при запуске моргает белым.
     backgroundColor: '#F5F7FA',
   },
+  ios: {
+    backgroundColor: '#F5F7FA',
+  },
 }
 
 export default config

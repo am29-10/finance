@@ -1,0 +1,247 @@
+# Собирает приложение для обоих телефонов и кладёт оба файла в один релиз.
+#
+# Ни Android SDK, ни Xcode на своём компьютере не нужны: и то и другое уже стоит
+# на машинах GitHub, а для публичного репозитория они бесплатны — включая macOS,
+# которую иначе пришлось бы покупать целиком ради одной команды сборки.
+#
+# Папки android/ и ios/ здесь не хранятся: Capacitor создаёт их на каждой сборке
+# из capacitor.config.ts, так что нечему устаревать и нечего чинить вручную.
+
+name: Приложение
+
+# Только по кнопке «Run workflow» на вкладке Actions. На каждый коммит собирать
+# незачем: каждая сборка — это новый релиз и уведомление всем, кто подписан,
+# а версию приложения обновляют осознанно, а не по факту правки запятой.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write # нужно, чтобы создать релиз и приложить к нему файлы
+
+jobs:
+  # Номер версии считается один раз на всех: иначе Android и iPhone разъедутся
+  # по версиям внутри одного релиза.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.compute.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: compute
+        run: |
+          NAME="$(node -p "require('./package.json').version").${{ github.run_number }}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Версия: $NAME"
+
+  android:
+    needs: version
+    runs-on: ubuntu-latest
+    outputs:
+      signed: ${{ steps.signing.outputs.ready }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Собрать веб-часть
+        run: npm run build:app
+
+      # Платформа компиляции задана в android/variables.gradle. На машине GitHub
+      # предустановлены не все версии, а Gradle без нужной падает уже на настройке.
+      - name: Доставить недостающие части Android SDK
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "platforms;android-36" > /dev/null || true
+
+      - name: Создать проект Android
+        run: |
+          npx cap add android
+          npx cap sync android
+          node scripts/android-icons.mjs
+          # Флаг запуска теряется при распаковке пакета — без него Gradle не стартует.
+          chmod +x android/gradlew
+
+      # Версия приложения. Android разрешает установку поверх только если
+      # versionCode вырос, поэтому берём номер сборки — он всегда увеличивается.
+      - name: Проставить версию
+        run: |
+          sed -i "s/versionCode 1/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"1.0\"/versionName \"${{ needs.version.outputs.name }}\"/" android/app/build.gradle
+          grep -E 'versionCode|versionName' android/app/build.gradle
+
+      - name: Проверить наличие ключа подписи
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Секрет KEYSTORE_BASE64 не задан — собираю отладочный APK. Он ставится и работает, но подписан одноразовым ключом: следующая сборка не установится поверх этой. Запустите 'npm run keystore' и добавьте секреты."
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Собрать подписанный APK
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/wallet.jks"
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+          # Подписываем не через Gradle, а вручную: так в build.gradle не нужно
+          # вписывать пароли, и сгенерированный проект остаётся нетронутым.
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          UNSIGNED=app/build/outputs/apk/release/app-release-unsigned.apk
+
+          "$BUILD_TOOLS/zipalign" -p 4 "$UNSIGNED" aligned.apk
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$RUNNER_TEMP/wallet.jks" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --out "$RUNNER_TEMP/koshelek.apk" \
+            aligned.apk
+          "$BUILD_TOOLS/apksigner" verify --print-certs "$RUNNER_TEMP/koshelek.apk"
+
+      - name: Собрать отладочный APK
+        if: steps.signing.outputs.ready != 'true'
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/koshelek.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: koshelek-apk
+          path: ${{ runner.temp }}/koshelek.apk
+
+  # Сборка для iPhone. Подпись здесь не ставится намеренно: сертификат Apple
+  # стоит 99 $ в год, а без него iPhone запускает только то, что подписано на
+  # самом телефоне. Этим и занимается SideStore — он берёт неподписанный файл,
+  # подписывает бесплатным Apple ID и раз в неделю обновляет подпись сам.
+  # Поэтому файл ниже — заготовка для SideStore, а не готовое к запуску приложение.
+  ios:
+    needs: version
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Установить зависимости
+        run: npm ci
+
+      - name: Собрать веб-часть
+        run: npm run build:app
+
+      - name: Создать проект iOS
+        run: |
+          npx cap add ios
+          npx cap sync ios
+          node scripts/ios-icons.mjs
+          # Xcode собирает workspace, а его создаёт CocoaPods. Обычно это делает
+          # сам cap add — но если шаг был пропущен, дальше упасть было бы негде.
+          if [ ! -d ios/App/App.xcworkspace ]; then
+            cd ios/App && pod install
+          fi
+
+      - name: Проставить версию
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${{ needs.version.outputs.name }}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
+
+      # Схема App в шаблоне не лежит — её создаёт Xcode при первом обращении к
+      # проекту. Обычно это происходит само, но если однажды не произойдёт,
+      # сборка упадёт с невнятным «scheme not found»: список ниже покажет, что
+      # именно Xcode увидел, вместо того чтобы гадать по логам.
+      - name: Показать схемы проекта
+        run: xcodebuild -workspace ios/App/App.xcworkspace -list
+
+      # IPA — это zip с папкой Payload внутри. Обычно его делает xcodebuild
+      # -exportArchive, но экспорт требует сертификата, которого здесь нет:
+      # поэтому архив собираем без подписи и упаковываем руками.
+      - name: Собрать IPA без подписи
+        run: |
+          xcodebuild archive \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP" && zip -qry koshelek.ipa Payload
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: koshelek-ipa
+          path: ${{ runner.temp }}/koshelek.ipa
+
+  # Артефакты выше скачиваются только с логином на GitHub и живут 90 дней.
+  # Релиз даёт постоянную прямую ссылку, на которую и ведут кнопки в приложении.
+  # Публикуем через встроенный gh: сторонние действия в цепочке сборки
+  # подписанного приложения — лишний доступ к ключу.
+  release:
+    needs: [version, android, ios]
+    # Одна упавшая платформа не должна прятать вторую: релиз соберётся из того,
+    # что доехало. Отладочный APK при этом не публикуется — раздать его нельзя,
+    # следующая сборка поверх него уже не встанет.
+    if: always() && (needs.android.outputs.signed == 'true' || needs.ios.result == 'success')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: files
+          merge-multiple: true
+
+      - name: Опубликовать релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_NAME: ${{ needs.version.outputs.name }}
+          APK_SIGNED: ${{ needs.android.outputs.signed }}
+        run: |
+          FILES=""
+          [ "$APK_SIGNED" = "true" ] && [ -f files/koshelek.apk ] && FILES="$FILES files/koshelek.apk"
+          [ -f files/koshelek.ipa ] && FILES="$FILES files/koshelek.ipa"
+
+          cat > notes.md << 'EOF'
+          Приложение «Кошелёк». Данные хранятся только на телефоне и никуда не отправляются.
+
+          **Android** — скачайте `koshelek.apk` и откройте файл на телефоне. Android
+          спросит разрешение установить приложение из этого источника: для программ
+          не из Play Маркета это обычное дело.
+
+          **iPhone** — `koshelek.ipa` не подписан и сам по себе не поставится. Его
+          подписывает на телефоне SideStore вашим бесплатным Apple ID. Порядок
+          установки описан в приложении: Профиль → Установить на телефон → iPhone.
+          EOF
+
+          gh release create "v$VERSION_NAME" $FILES \
+            --title "Кошелёк $VERSION_NAME" \
+            --notes-file notes.md
