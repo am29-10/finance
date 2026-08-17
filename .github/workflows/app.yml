@@ -154,16 +154,29 @@ jobs:
       - name: Собрать веб-часть
         run: npm run build:app
 
+      # Дальше идут четыре отдельных шага вместо одного. Собранные вместе, они
+      # сообщали бы только «exit code 1», не говоря, что именно сломалось:
+      # создание проекта, CocoaPods или отрисовка иконок — вещи разные, и чинятся
+      # по-разному. Логи сборки закрыты для всех, кроме владельца репозитория,
+      # поэтому имя упавшего шага — единственное, что видно со стороны.
+      - name: Показать окружение
+        run: |
+          sw_vers
+          xcodebuild -version
+          node --version
+
+      # Зависимости подключаются через Swift Package Manager, а не CocoaPods:
+      # Capacitor 8 генерирует Package.swift и не создаёт Podfile вовсе. Отсюда
+      # и сборка ниже идёт из .xcodeproj — привычного для Capacitor .xcworkspace,
+      # который раньше создавал pod install, здесь просто не существует.
       - name: Создать проект iOS
         run: |
           npx cap add ios
           npx cap sync ios
-          node scripts/ios-icons.mjs
-          # Xcode собирает workspace, а его создаёт CocoaPods. Обычно это делает
-          # сам cap add — но если шаг был пропущен, дальше упасть было бы негде.
-          if [ ! -d ios/App/App.xcworkspace ]; then
-            cd ios/App && pod install
-          fi
+          ls -la ios/App
+
+      - name: Нарисовать фирменные иконки
+        run: node scripts/ios-icons.mjs
 
       - name: Проставить версию
         run: |
@@ -176,7 +189,7 @@ jobs:
       # сборка упадёт с невнятным «scheme not found»: список ниже покажет, что
       # именно Xcode увидел, вместо того чтобы гадать по логам.
       - name: Показать схемы проекта
-        run: xcodebuild -workspace ios/App/App.xcworkspace -list
+        run: xcodebuild -project ios/App/App.xcodeproj -list
 
       # IPA — это zip с папкой Payload внутри. Обычно его делает xcodebuild
       # -exportArchive, но экспорт требует сертификата, которого здесь нет:
@@ -184,7 +197,7 @@ jobs:
       - name: Собрать IPA без подписи
         run: |
           xcodebuild archive \
-            -workspace ios/App/App.xcworkspace \
+            -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -destination 'generic/platform=iOS' \
@@ -226,9 +239,21 @@ jobs:
           VERSION_NAME: ${{ needs.version.outputs.name }}
           APK_SIGNED: ${{ needs.android.outputs.signed }}
         run: |
+          # Проверки написаны через if, а не через «условие && действие»: шаг
+          # выполняется с set -e, и несработавшее условие в конце строки — это
+          # ненулевой код возврата, от которого падает весь шаг. Одна отсутствующая
+          # платформа не должна отменять релиз второй.
           FILES=""
-          [ "$APK_SIGNED" = "true" ] && [ -f files/koshelek.apk ] && FILES="$FILES files/koshelek.apk"
-          [ -f files/koshelek.ipa ] && FILES="$FILES files/koshelek.ipa"
+
+          if [ "$APK_SIGNED" = "true" ] && [ -f files/koshelek.apk ]; then
+            FILES="$FILES files/koshelek.apk"
+          fi
+
+          if [ -f files/koshelek.ipa ]; then
+            FILES="$FILES files/koshelek.ipa"
+          fi
+
+          echo "В релиз идёт:$FILES"
 
           cat > notes.md << 'EOF'
           Приложение «Кошелёк». Данные хранятся только на телефоне и никуда не отправляются.
